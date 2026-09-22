@@ -5,9 +5,13 @@
   "compilerOptions": {
     /*
      * NO baseUrl. It is deprecated in TypeScript 6 (TS5101) and stops working
-     * in 7.0. `paths` has not required it since TS 4.1 - entries resolve
-     * relative to this file - and zoho-hub's tsconfig never had one, so
-     * removing it also removes a difference between the two projects.
+     * in 7.0. zoho-hub's tsconfig never had one, so its absence also removes a
+     * difference between the two projects.
+     *
+     * The consequence is in `paths` below: with no baseUrl there is no root to
+     * resolve a bare path against, so every TARGET has to be written relative
+     * (leading './'). The KEYS stay non-relative - those are the specifiers
+     * you type in an import, not locations.
      */
     "outDir": "./dist/out-tsc",
     "forceConsistentCasingInFileNames": true,
@@ -52,8 +56,8 @@
      * would get - there is no privileged internal route.
      */
     "paths": {
-      "@soundboard-ng": ["projects/soundboard-ng/src/public-api.ts"],
-      "soundboard-ng": ["projects/soundboard-ng/src/public-api.ts"]
+      "@soundboard-ng": ["./projects/soundboard-ng/src/public-api.ts"],
+      "soundboard-ng": ["./projects/soundboard-ng/src/public-api.ts"]
     }
   },
   "angularCompilerOptions": {
