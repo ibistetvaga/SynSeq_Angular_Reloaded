@@ -24,11 +24,33 @@ export interface MidiStepEvent {
   lengthSteps: number;
 }
 
-const TOKEN_SPLIT = /[\s\n,;]+/;
-const RE_EXPLICIT_NOTE = /^(\d{1,3})@(\d{1,3}):(\d{1,3})$/;
-const RE_EXPLICIT_CHORD = /^(\d{1,3})@\[([^\]]+)\]:(\d{1,3})$/;
-const RE_SEQ_NOTE = /^(\d{1,3}):(\d{1,3})$/;
-const RE_SEQ_CHORD = /^\[([^\]]+)\]:(\d{1,3})$/;
+/*
+ * =========================================================================
+ * WHY THIS IS A SCANNER AND NOT A SPLIT
+ * =========================================================================
+ *
+ * This used to tokenize with `text.split(/[\s\n,;]+/)` and then match each
+ * piece against four regexes. The comma was in that separator set, so the
+ * split cut INSIDE a chord:
+ *
+ *     '2@[60,64,67]:4'  ->  ['2@[60', '64', '67]:4']
+ *
+ * None of those match anything, and the parser drops tokens it cannot read.
+ * So chords never played - not in explicit form, not in sequential form, not
+ * for any caller - and the failure was silent, because a dropped token makes
+ * no sound rather than an error.
+ *
+ * Scanning for whole tokens fixes it at the root: the comma inside the
+ * brackets is part of the match now, rather than a delimiter competing with
+ * it. Separators BETWEEN tokens stop mattering entirely - whitespace,
+ * newlines, commas and semicolons all still work, because anything the
+ * scanner does not match is simply not a token.
+ *
+ * The `[^\]]*` inside the brackets is deliberately permissive: validating the
+ * MIDI numbers is parseMidiList's job, and a chord with one bad number should
+ * lose that number, not the whole chord.
+ */
+const TOKEN_SCAN = /(?:(\d{1,3})@)?(\[[^\]]*\]|\d{1,3}):(\d{1,3})/g;
 
 function parseMidiList(raw: string): number[] {
   return raw
@@ -44,63 +66,41 @@ function parseMidiList(raw: string): number[] {
  * returns the flat list of events. Sequential tokens pack one after
  * another; explicit tokens keep the step positions written by the user.
  *
- * Tokens that don't parse are silently skipped — callers can decide
+ * Text that doesn't match a token is silently skipped - callers can decide
  * whether empty output means "invalid input".
  */
 export function parseMidiStepTokens(text: string): MidiStepEvent[] {
   const events: MidiStepEvent[] = [];
   if (!text) return events;
 
-  const tokens = text
-    .split(TOKEN_SPLIT)
-    .map((t) => t.trim())
-    .filter(Boolean);
-
   let cursorStep = 0;
 
-  for (const tok of tokens) {
-    let m: RegExpExecArray | null;
-    if ((m = RE_EXPLICIT_CHORD.exec(tok))) {
-      const start = parseInt(m[1], 10);
-      const length = parseInt(m[3], 10);
-      if (!length) continue;
-      const midis = parseMidiList(m[2]);
-      if (midis.length) {
-        events.push({ startStep: start, midis, lengthSteps: length });
-      }
-      continue;
-    }
-    if ((m = RE_EXPLICIT_NOTE.exec(tok))) {
-      const start = parseInt(m[1], 10);
-      const midi = parseInt(m[2], 10);
-      const length = parseInt(m[3], 10);
-      if (!length) continue;
-      events.push({ startStep: start, midis: [midi], lengthSteps: length });
-      continue;
-    }
-    if ((m = RE_SEQ_CHORD.exec(tok))) {
-      const length = parseInt(m[2], 10);
-      if (!length) continue;
-      const midis = parseMidiList(m[1]);
-      if (midis.length) {
-        events.push({
-          startStep: cursorStep,
-          midis,
-          lengthSteps: length,
-        });
-        cursorStep += Math.max(1, length);
-      }
-      continue;
-    }
-    if ((m = RE_SEQ_NOTE.exec(tok))) {
-      const midi = parseInt(m[1], 10);
-      const length = parseInt(m[2], 10);
-      if (!length) continue;
+  // matchAll rather than exec-in-a-loop: TOKEN_SCAN is module-level and
+  // global, so a manual loop would carry lastIndex between calls and make the
+  // second parse of the same string return something different from the first.
+  for (const m of text.matchAll(TOKEN_SCAN)) {
+    const explicitStep = m[1];
+    const body = m[2];
+    const length = parseInt(m[3], 10);
+    if (!length) continue;
+
+    const isChord = body.startsWith('[');
+    const midis = isChord
+      ? parseMidiList(body.slice(1, -1))
+      : [parseInt(body, 10)].filter((n) => n >= 0 && n <= 127);
+    if (!midis.length) continue;
+
+    if (explicitStep !== undefined) {
+      // Explicit tokens do NOT move the sequential cursor. Mixing the two
+      // flavors in one string is unusual, but if somebody does, the explicit
+      // positions should not drag the implicit ones around.
       events.push({
-        startStep: cursorStep,
-        midis: [midi],
+        startStep: parseInt(explicitStep, 10),
+        midis,
         lengthSteps: length,
       });
+    } else {
+      events.push({ startStep: cursorStep, midis, lengthSteps: length });
       cursorStep += Math.max(1, length);
     }
   }
@@ -109,22 +109,15 @@ export function parseMidiStepTokens(text: string): MidiStepEvent[] {
 }
 
 /**
- * Returns true if at least one token parses cleanly to a valid event.
- * Used by the sequence cache and the save form to reject garbage.
+ * Returns true if the text contains at least one token that parses to a
+ * usable event. Used by the sequence cache and the save form to reject
+ * garbage.
+ *
+ * Defined in terms of parseMidiStepTokens rather than re-testing the regexes,
+ * so "valid" can never drift from "actually produces sound". The previous
+ * version kept a parallel set of tests, which is how the chord bug got to
+ * report a chord-only string as valid while parsing it to nothing.
  */
 export function hasValidMidiStepToken(text: string): boolean {
-  if (!text || !text.trim()) return false;
-  const tokens = text.split(TOKEN_SPLIT).map((t) => t.trim()).filter(Boolean);
-  if (!tokens.length) return false;
-  for (const tok of tokens) {
-    if (
-      RE_EXPLICIT_NOTE.test(tok) ||
-      RE_EXPLICIT_CHORD.test(tok) ||
-      RE_SEQ_NOTE.test(tok) ||
-      RE_SEQ_CHORD.test(tok)
-    ) {
-      return true;
-    }
-  }
-  return false;
+  return parseMidiStepTokens(text).length > 0;
 }
