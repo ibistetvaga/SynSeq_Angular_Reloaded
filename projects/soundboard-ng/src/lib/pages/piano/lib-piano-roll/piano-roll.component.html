@@ -75,8 +75,15 @@
     </div>
   </header>
 
-  <!-- Piano roll grid -->
-  <div class="roll-viewport" #viewport tabindex="0" (keydown)="onKeyDown($event)" (mousedown)="$event.currentTarget.focus()">
+  <!--
+    Piano roll grid.
+
+    `viewport.focus()` rather than `$event.currentTarget.focus()`: the DOM types
+    `currentTarget` as `EventTarget | null`, which has no focus() and is null
+    outside dispatch. The template ref on this very element is the typed,
+    always-present way to say the same thing.
+  -->
+  <div class="roll-viewport" #viewport tabindex="0" (keydown)="onKeyDown($event)" (mousedown)="viewport.focus()">
     <!-- Playhead track for seeking -->
     <div
       class="playhead-track"
