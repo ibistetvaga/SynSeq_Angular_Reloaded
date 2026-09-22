@@ -1,13 +1,17 @@
+/* To learn more about Typescript configuration file: https://www.typescriptlang.org/docs/handbook/tsconfig-json.html. */
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "outDir": "./out-tsc/app",
-    "types": [
-      "node"
-    ],
-    "paths": {
-      "@soundboard-ng": ["dist/soundboard-ng"]
-    }
+    "outDir": "./out-tsc/app"
+
+    /*
+     * The `paths` override that used to live here pointed `@soundboard-ng` at
+     * `dist/soundboard-ng`, which meant `npm start` silently required a
+     * `npm run build:lib` first - and served STALE library code whenever you
+     * forgot. Removing it lets this inherit the source mapping from the root
+     * config, so the dashboard always runs the library you are actually
+     * editing. That is the entire job of a lab.
+     */
   },
   "files": [
     "src/main.ts"

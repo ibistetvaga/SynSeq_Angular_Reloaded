@@ -1,21 +1,30 @@
 {
   "name": "soundboard-ng",
-  "version": "0.1.0",
-  "description": "Angular 17 standalone library wrapping a synth keyboard, sequencer, presets and editable sequence cache (localStorage).",
-  "keywords": ["angular", "piano", "synth", "audio", "webaudio", "music", "sequencer", "soundboard"],
+  "version": "0.2.0",
+  "description": "Angular 22 standalone library wrapping a synth keyboard, sequencer, presets and editable sequence cache (localStorage).",
+  "keywords": [
+    "angular",
+    "piano",
+    "synth",
+    "audio",
+    "webaudio",
+    "music",
+    "sequencer",
+    "soundboard"
+  ],
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Kuuhaku07/Piano_Synth_Angular.git"
+    "url": "https://github.com/ibistetvaga/SynSeq_Angular_Reloaded.git"
   },
   "bugs": {
-    "url": "https://github.com/Kuuhaku07/Piano_Synth_Angular/issues"
+    "url": "https://github.com/ibistetvaga/SynSeq_Angular_Reloaded/issues"
   },
-  "homepage": "https://github.com/Kuuhaku07/Piano_Synth_Angular#readme",
+  "homepage": "https://github.com/ibistetvaga/SynSeq_Angular_Reloaded#readme",
   "peerDependencies": {
-    "@angular/common": "^17.0.0",
-    "@angular/core": "^17.0.0",
-    "@angular/forms": "^17.0.0"
+    "@angular/common": "^22.0.0",
+    "@angular/core": "^22.0.0",
+    "@angular/forms": "^22.0.0"
   },
   "sideEffects": false
 }
