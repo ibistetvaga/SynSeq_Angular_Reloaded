@@ -9,8 +9,8 @@ import {
   OnInit,
   Output,
 } from '@angular/core';
-import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+
 import {
   PianoSoundService,
   NoteName,
@@ -18,13 +18,8 @@ import {
   VoiceName,
 } from '../../../services/piano-sound.service';
 import { SequenceStep } from '../../../services/piano-sound.service';
-import {
-  midiToPitch,
-  pitchToMidi,
-} from '../../../services/music-theory';
-import {
-  parseMidiStepTokens,
-} from '../../../services/midi-step-parser';
+import { midiToPitch, pitchToMidi } from '../../../services/music-theory';
+import { parseMidiStepTokens } from '../../../services/midi-step-parser';
 
 export type Quantization = '1/4' | '1/8' | '1/16';
 
@@ -36,16 +31,28 @@ interface Block {
 }
 
 /**
- * Grid keyed by `${note}|${octave}` — each value is an ARRAY of blocks
+ * Grid keyed by `${note}|${octave}` - each value is an ARRAY of blocks
  * because the same note can appear at multiple steps in the pattern.
  * The array is kept sorted by `start` so iteration is deterministic.
  */
 type Grid = Record<string, Block[]>;
 
+/** Timer handle type. Browser setInterval returns a number; Node types differ. */
+type TimerHandle = ReturnType<typeof setInterval>;
+
+/** The five sharps, as a set - used to tint black-key rows. */
+const BLACK_NOTES: ReadonlySet<NoteName> = new Set<NoteName>([
+  'C#',
+  'D#',
+  'F#',
+  'G#',
+  'A#',
+]);
+
 @Component({
   selector: 'lib-piano-sequencer',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [FormsModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './piano-sequencer.component.html',
   styleUrl: './piano-sequencer.component.scss',
@@ -62,8 +69,6 @@ export class PianoSequencerComponent implements OnInit, OnDestroy {
 
   /** Steps per loop. 16 by default. */
   public steps = 16;
-  /** Beats per loop (used to compute BPM). 4 = 4/4 time, 16 sixteenths. */
-  public beats = 4;
   public bpm = 100;
   public quantization: Quantization = '1/16';
 
@@ -74,6 +79,16 @@ export class PianoSequencerComponent implements OnInit, OnDestroy {
 
   public isPlaying = false;
   public currentStep = -1;
+
+  /**
+   * Buffered text in the output textarea. Mirrors `gridAsText()` and is kept
+   * in sync automatically whenever the grid mutates. The textarea is bound via
+   * one-way `[ngModel]`, so the buffer is the source of truth for the visible
+   * text; editing it calls `loadFromText()`, which replaces the grid.
+   */
+  public textBuffer = '';
+
+  public copyLabel = 'Copiar';
 
   /**
    * Tracks an in-progress pointer drag on the grid. Modeled after the
@@ -99,12 +114,11 @@ export class PianoSequencerComponent implements OnInit, OnDestroy {
   } | null = null;
 
   /** ms per step, derived from BPM + quantization. */
-  private stepMs = (60 / this.bpm) * 1000 / 4; // '1/16' default
+  private stepMs = ((60 / this.bpm) * 1000) / 4; // '1/16' default
   /** Scheduler state. */
   private nextStepTime = 0;
   private audioCtx: AudioContext | null = null;
-  private rafHandle: number | null = null;
-  private timerHandle: any = null;
+  private timerHandle: TimerHandle | null = null;
 
   constructor(
     private piano: PianoSoundService,
@@ -118,6 +132,29 @@ export class PianoSequencerComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.stop();
+  }
+
+  // ---------------- Template helpers ----------------
+
+  /**
+   * `[0, 1, ... steps-1]`, for iterating the columns.
+   *
+   * Replaces `[].constructor(steps)` in the template: that built a sparse
+   * array purely to express a count, typed as `any`, and left `@for` with
+   * nothing stable to track.
+   */
+  public get stepNumbers(): number[] {
+    return Array.from({ length: this.steps }, (_, i) => i);
+  }
+
+  /** True for the five sharps, which get a darker row tint. */
+  public isBlack(row: { note: NoteName }): boolean {
+    return BLACK_NOTES.has(row.note);
+  }
+
+  /** Stable identity for a row. Public because `@for`'s `track` calls it. */
+  public rowKey(row: { note: NoteName; octave: number }): string {
+    return `${row.note}|${row.octave}`;
   }
 
   // ---------------- Public API ----------------
@@ -153,25 +190,6 @@ export class PianoSequencerComponent implements OnInit, OnDestroy {
     return this.stepMs;
   }
 
-  /**
-   * Buffered text in the output textarea. Mirrors `gridAsText()` and is
-   * kept in sync automatically whenever the grid mutates. The textarea
-   * is bound via `[ngModel]` (one-way), so the buffer is the source of
-   * truth for the visible text. Editing the textarea calls
-   * `loadFromText()` which replaces the grid.
-   */
-  public textBuffer = '';
-
-  /**
-   * Recomputes `textBuffer` from the current grid. Called automatically
-   * after any grid mutation.
-   */
-  private syncTextBufferFromGrid(): void {
-    this.textBuffer = this.gridAsText();
-  }
-
-  public copyLabel = 'Copiar';
-
   public async copyToClipboard(): Promise<void> {
     const text = this.gridAsText();
     try {
@@ -187,7 +205,7 @@ export class PianoSequencerComponent implements OnInit, OnDestroy {
         document.execCommand('copy');
         document.body.removeChild(ta);
       }
-      this.copyLabel = '¡Copiado!';
+      this.copyLabel = '\u00a1Copiado!';
       this.cdr.markForCheck();
       setTimeout(() => {
         this.copyLabel = 'Copiar';
@@ -219,8 +237,7 @@ export class PianoSequencerComponent implements OnInit, OnDestroy {
   public onPaste(event: ClipboardEvent): void {
     const text = event.clipboardData?.getData('text/plain') ?? '';
     if (!text.trim()) return;
-    // Heuristic detection: any token looking like `n:n`, `[...]:n`, or
-    // `n@n:n`.
+    // Heuristic detection: any token looking like `n:n`, `[...]:n`, or `n@n:n`.
     const looksLikeMidiSteps =
       /(^|\s)\d{1,3}:\d{1,3}(\s|$)/.test(text) ||
       /(^|\s)\[[^\]]+\]:\d{1,3}(\s|$)/.test(text) ||
@@ -234,9 +251,9 @@ export class PianoSequencerComponent implements OnInit, OnDestroy {
   // ---------------- Grid helpers ----------------
 
   /**
-   * Returns the block at (row, step) — i.e. the one that owns this
-   * specific cell. A row can have multiple blocks; this finds the one
-   * whose [start, start+length) range covers `step`.
+   * Returns the block at (row, step) - i.e. the one that owns this specific
+   * cell. A row can have multiple blocks; this finds the one whose
+   * [start, start+length) range covers `step`.
    */
   public blockAt(
     row: { note: NoteName; octave: number },
@@ -250,8 +267,9 @@ export class PianoSequencerComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * Returns the block (if any) that STARTS at `startStep` in this row —
-   * used by the drag handler to know which block to extend.
+   * Returns the block (if any) that STARTS at `startStep` in this row - used
+   * by the drag handler to know which block to extend, and by the template to
+   * draw each block exactly once.
    */
   public blockStartingAt(
     row: { note: NoteName; octave: number },
@@ -263,13 +281,13 @@ export class PianoSequencerComponent implements OnInit, OnDestroy {
 
   /**
    * Pointer-down on a cell. Starts a tentative paint:
-   *  - Empty cell: create a 1-step block; willToggleOnTap = false (we
-   *    want to KEEP the block on release — it's a new note).
-   *  - Cell with a block: remember the existing block; willToggleOnTap
-   *    = true (we want to DELETE it on release unless the user drags).
+   *  - Empty cell: create a 1-step block; willToggleOnTap = false (we want to
+   *    KEEP the block on release - it's a new note).
+   *  - Cell with a block: remember the existing block; willToggleOnTap = true
+   *    (we want to DELETE it on release unless the user drags).
    *
-   * The decision between "tap" and "drag" is deferred to pointerup —
-   * see endDrag().
+   * The decision between "tap" and "drag" is deferred to pointerup - see
+   * endDrag().
    */
   public onPointerDown(
     row: { note: NoteName; octave: number },
@@ -291,14 +309,11 @@ export class PianoSequencerComponent implements OnInit, OnDestroy {
       };
     } else {
       // Create a 1-step block right now. It stays unless the user starts
-      // dragging onto it weirdly — but `onPointerEnter` only extends
-      // blocks whose anchor matches, so a fresh block from pointerdown
-      // is safe to keep.
+      // dragging onto it weirdly - but `onPointerEnter` only extends blocks
+      // whose anchor matches, so a fresh block from pointerdown is safe.
       const blocks = this.grid[key] ?? [];
       const newBlock: Block = { start: step, length: 1 };
-      this.grid[key] = [...blocks, newBlock].sort(
-        (a, b) => a.start - b.start,
-      );
+      this.grid[key] = [...blocks, newBlock].sort((a, b) => a.start - b.start);
       this.drag = {
         rowKey: key,
         row,
@@ -317,9 +332,9 @@ export class PianoSequencerComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * Pointer enters a cell while a drag is in progress. Same-row only.
-   * Extends the block to span from `anchorStep` to the current step.
-   * Marking hasMoved makes the eventual tap-toggle a no-op.
+   * Pointer enters a cell while a drag is in progress. Same-row only. Extends
+   * the block to span from `anchorStep` to the current step. Marking hasMoved
+   * makes the eventual tap-toggle a no-op.
    */
   public onPointerEnter(
     row: { note: NoteName; octave: number },
@@ -340,14 +355,12 @@ export class PianoSequencerComponent implements OnInit, OnDestroy {
     }
   }
 
-  /**
-   * Pointerup anywhere. Decides tap vs drag using the drag state.
-   */
+  /** Pointerup anywhere. Decides tap vs drag using the drag state. */
   @HostListener('window:pointerup')
   public endDrag(): void {
     if (!this.drag) return;
     if (!this.drag.hasMoved && this.drag.willToggleOnTap) {
-      // Tap on a pre-existing block → delete it.
+      // Tap on a pre-existing block -> delete it.
       const key = this.drag.rowKey;
       const blocks = (this.grid[key] ?? []).filter(
         (b) => b !== this.drag!.block,
@@ -370,12 +383,9 @@ export class PianoSequencerComponent implements OnInit, OnDestroy {
     this.drag = null;
   }
 
-  private rowKey(row: { note: NoteName; octave: number }): string {
-    return `${row.note}|${row.octave}`;
-  }
-
   private recomputeRows(): void {
     const list: Array<{ note: NoteName; octave: number }> = [];
+    // Top-down: highest pitch first, so the grid reads like a piano roll.
     const semitones: NoteName[] = [
       'B',
       'A#',
@@ -408,13 +418,17 @@ export class PianoSequencerComponent implements OnInit, OnDestroy {
     this.stepMs = quarterMs / div;
   }
 
+  /** Recomputes `textBuffer` from the grid. Called after any grid mutation. */
+  private syncTextBufferFromGrid(): void {
+    this.textBuffer = this.gridAsText();
+  }
+
   // ---------------- Export ----------------
 
   /**
-   * Exports the current grid as an array of SequenceStep ready to be
-   * passed to PianoSoundService.playSequence(). Each block becomes one
-   * step (or a chord step if multiple rows have a block at the same
-   * start time).
+   * Exports the current grid as an array of SequenceStep ready to be passed to
+   * PianoSoundService.playSequence(). Each block becomes one step (or a chord
+   * step if multiple rows have a block at the same start time).
    */
   public gridAsSequence(): SequenceStep[] {
     const stepMs = this.stepMs;
@@ -439,7 +453,7 @@ export class PianoSequencerComponent implements OnInit, OnDestroy {
         });
       }
     }
-    // Group by start time → chords.
+    // Group by start time -> chords.
     flat.sort((a, b) => a.start - b.start);
     const out: SequenceStep[] = [];
     let i = 0;
@@ -450,8 +464,8 @@ export class PianoSequencerComponent implements OnInit, OnDestroy {
         group.push(flat[j]);
         j += 1;
       }
-      // Use the longest block length as the chord duration so chords
-      // don't get cut off by shorter siblings.
+      // Use the longest block length as the chord duration so chords don't get
+      // cut off by shorter siblings.
       const length = Math.max(...group.map((g) => g.length));
       if (group.length === 1) {
         out.push({
@@ -469,23 +483,17 @@ export class PianoSequencerComponent implements OnInit, OnDestroy {
     return out;
   }
 
+  /**
+   * Serialises the grid to `step@midi:length` tokens.
+   *
+   * Walks `rows` rather than the grid's own keys, because a row carries the
+   * NoteName needed to compute a MIDI number - recovering it by splitting the
+   * key string would mean re-parsing what we already have typed.
+   */
   public gridAsText(): string {
-    // Two-part flat list. Every block has an explicit step position
-    // (e.g. `2@60:4` = MIDI 60 starts at step 2, lasts 4 steps). This
-    // round-trips perfectly with arbitrary grids where blocks are not
-    // packed sequentially.
     const out: string[] = [];
-    for (const [, blocks] of Object.entries(this.grid)) {
-      for (const b of blocks) {
-        const lengthSteps = Math.max(1, b.length);
-        // Build the inner note/chord payload (MIDI numbers).
-        // We need the note info to compute MIDI; the grid key is
-        // `${note}|${octave}` so we can recover the pitch from it.
-      }
-    }
-    // Rebuild with explicit pitch recovery: walk rows so we know the note.
     for (const row of this.rows) {
-      const blocks = this.grid[`${row.note}|${row.octave}`] ?? [];
+      const blocks = this.grid[this.rowKey(row)] ?? [];
       for (const b of blocks) {
         const midi = pitchToMidi({ note: row.note, octave: row.octave });
         if (midi == null) continue;
@@ -504,17 +512,17 @@ export class PianoSequencerComponent implements OnInit, OnDestroy {
   /**
    * Replaces the current grid from a text payload. Accepts two flavors:
    *
-   * 1) **Explicit step** (preferred): `2@60:4 8@64:2` — `step@midi:length`.
-   *    Each token pins its block to a specific step in the grid. This is
-   *    the format the sequencer exports and round-trips losslessly even
-   *    when blocks are sparse / non-contiguous.
+   * 1) **Explicit step** (preferred): `2@60:4 8@64:2` - `step@midi:length`.
+   *    Each token pins its block to a specific step in the grid. This is the
+   *    format the sequencer exports and round-trips losslessly even when
+   *    blocks are sparse / non-contiguous.
    *
-   * 2) **Sequential** (fallback): `60:4 64:2 67:1` — tokens pack one
-   *    after another; the cursor advances by `length` after each. Useful
-   *    for quickly typing a melody without specifying positions.
+   * 2) **Sequential** (fallback): `60:4 64:2 67:1` - tokens pack one after
+   *    another; the cursor advances by `length` after each. Useful for quickly
+   *    typing a melody without specifying positions.
    *
-   * Both flavors support chords with `[60,64,67]:4` and
-   * `2@[60,64,67]:4`. Tokens that don't parse are silently skipped.
+   * Both flavors support chords with `[60,64,67]:4` and `2@[60,64,67]:4`.
+   * Tokens that don't parse are silently skipped.
    */
   public loadFromText(text: string): void {
     this.stop();
@@ -522,14 +530,12 @@ export class PianoSequencerComponent implements OnInit, OnDestroy {
 
     const events = parseMidiStepTokens(text || '');
 
+    // Unlike the piano roll, this grid is a FIXED 16-step loop, so anything
+    // past the end is pinned to the last step rather than expanding the grid.
     const clampStep = (s: number): number =>
       Math.max(0, Math.min(this.steps - 1, s));
 
-    const place = (
-      midi: number,
-      length: number,
-      startStep: number,
-    ): void => {
+    const place = (midi: number, length: number, startStep: number): void => {
       const pitch = midiToPitch(midi);
       if (!pitch) return;
       const key = `${pitch.note}|${pitch.octave}`;
@@ -571,16 +577,12 @@ export class PianoSequencerComponent implements OnInit, OnDestroy {
       clearInterval(this.timerHandle);
       this.timerHandle = null;
     }
-    if (this.rafHandle) {
-      cancelAnimationFrame(this.rafHandle);
-      this.rafHandle = null;
-    }
     this.cdr.markForCheck();
   }
 
   /**
-   * Look-ahead scheduler. Every 25ms checks which steps are due in the
-   * next 100ms and pre-schedules them on the audio timeline.
+   * Look-ahead scheduler. Every 25ms checks which steps are due in the next
+   * 100ms and pre-schedules them on the audio timeline.
    */
   private tick(): void {
     if (!this.isPlaying || !this.audioCtx) return;
@@ -592,7 +594,7 @@ export class PianoSequencerComponent implements OnInit, OnDestroy {
     let advanced = false;
     while (this.nextStepTime < now + lookahead) {
       const stepIdx =
-        ((this.currentStep + 1) % this.steps + this.steps) % this.steps;
+        (((this.currentStep + 1) % this.steps) + this.steps) % this.steps;
       this.scheduleStep(stepIdx, this.nextStepTime);
       this.currentStep = stepIdx;
       this.nextStepTime += this.stepMs / 1000;
@@ -605,10 +607,7 @@ export class PianoSequencerComponent implements OnInit, OnDestroy {
 
   private scheduleStep(stepIdx: number, audioTime: number): void {
     if (!this.audioCtx) return;
-    const delayMs = Math.max(
-      0,
-      (audioTime - this.audioCtx.currentTime) * 1000,
-    );
+    const delayMs = Math.max(0, (audioTime - this.audioCtx.currentTime) * 1000);
     for (const row of this.rows) {
       const block = this.blockStartingAt(row, stepIdx);
       if (!block) continue;
@@ -620,13 +619,5 @@ export class PianoSequencerComponent implements OnInit, OnDestroy {
         );
       }, delayMs);
     }
-  }
-
-  public playheadFraction(): number {
-    if (!this.isPlaying || !this.audioCtx) return 0;
-    const now = this.audioCtx.currentTime;
-    if (this.nextStepTime === 0) return 0;
-    const elapsed = now - (this.nextStepTime - this.stepMs / 1000);
-    return Math.max(0, Math.min(1, elapsed / (this.stepMs / 1000)));
   }
 }
