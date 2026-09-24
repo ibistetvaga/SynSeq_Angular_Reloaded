@@ -18,9 +18,10 @@ export type {
 } from './lib/services/piano-sound.service';
 
 export {
+  PIANO_PRESETS,
   PIANO_PRESETS_DEFAULT,
   PianoPresetsService,
-  PRESETS_URL,
+  providePianoPresets,
 } from './lib/services/piano-presets';
 export type { PianoPresetKey } from './lib/services/piano-presets';
 
