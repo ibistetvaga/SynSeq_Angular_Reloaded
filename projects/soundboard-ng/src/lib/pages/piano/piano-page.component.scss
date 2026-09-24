@@ -1,84 +1,643 @@
-/* Piano-specific styles that complement the Tailwind utility classes.
-   Kept intentionally minimal: only the visual feedback for held keys,
-   which cannot be expressed cleanly with Tailwind utilities alone. */
+@use '../../styles/tokens' as t;
 
-.piano-key.is-active,
-.piano-key:active {
-  background-color: #34d399 !important; /* emerald-400 */
-  color: #0f172a !important; /* slate-900 */
+/*
+ * The piano page: controls, keyboard, presets and the saved-sequence cache.
+ *
+ * The sequencer and piano roll style themselves - this file deliberately does
+ * NOT reach into them. Shared appearance comes from shared tokens, not from a
+ * parent stylesheet, so either grid can be dropped into a page on its own.
+ */
+
+:host {
+  display: block;
 }
 
-.piano-key {
+.piano-page {
+  padding: 1.5rem;
+  color: t.$text;
+}
+
+.page-head {
+  margin-bottom: 1.5rem;
+}
+
+.page-title {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: t.$text;
+}
+
+/* ---- Panels ------------------------------------------------------------- */
+
+.panel {
+  margin-top: 1.5rem;
+  padding: 1.25rem;
+  border-radius: t.$radius-xl;
+  background: t.$surface-translucent;
+  border: 1px solid t.$border;
+  backdrop-filter: blur(12px);
+
+  &:first-of-type {
+    margin-top: 0;
+  }
+}
+
+.panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.panel__title {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: t.$text;
+}
+
+.panel__subtitle {
+  margin: 0.125rem 0 0;
+  font-size: 0.75rem;
+  color: t.$text-muted;
+}
+
+.panel__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+/* ---- Controls bar ------------------------------------------------------- */
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 1.5rem;
+}
+
+.controls__stop {
+  margin-left: auto;
+}
+
+.control {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.control--volume {
+  min-width: 180px;
+}
+
+.control--waveform {
+  min-width: 260px;
+}
+
+.control-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: t.$text-muted;
+}
+
+.control-hint {
+  font-size: 10px;
+  color: t.$text-faint;
+}
+
+.control-hint--right {
+  text-align: right;
+}
+
+.octave {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.octave__value {
+  min-width: 3rem;
+  text-align: center;
+  font-family: t.$font-mono;
+  font-size: 1.125rem;
+  color: t.$text;
+}
+
+/* ---- Buttons ------------------------------------------------------------ */
+
+.btn {
+  padding: 0.5rem 0.75rem;
+  border: none;
+  border-radius: t.$radius-lg;
+  background: t.$surface-raised;
+  color: t.$text;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: background-color t.$transition;
+
+  &:hover:not(:disabled) {
+    background: t.$surface-hover;
+  }
+
+  &:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px t.$accent-ring;
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+}
+
+.btn--step {
+  font-weight: 700;
+}
+
+.btn--sm {
+  padding: 0.375rem 0.75rem;
+  border-radius: t.$radius-md;
+  font-size: 0.75rem;
+  color: t.$text-secondary;
+}
+
+.btn--accent {
+  background: t.$accent;
+  color: t.$text-on-accent;
+  font-weight: 600;
+
+  &:hover:not(:disabled) {
+    background: t.$accent-light;
+  }
+}
+
+.btn--danger {
+  background: t.$danger;
+  color: t.$text-on-strong;
+  font-weight: 500;
+  padding: 0.5rem 1rem;
+
+  &:hover:not(:disabled) {
+    background: t.$danger-hover;
+  }
+}
+
+/* ---- Inputs ------------------------------------------------------------- */
+
+.input,
+.select {
+  background: t.$surface-raised;
+  border: 1px solid t.$border;
+  border-radius: t.$radius-lg;
+  padding: 0.5rem 0.75rem;
+  color: t.$text;
+  font-size: 0.875rem;
+
+  &::placeholder {
+    color: t.$text-faint;
+  }
+
+  &:focus {
+    outline: none;
+    border-color: t.$accent;
+    box-shadow: 0 0 0 2px t.$accent-ring-soft;
+  }
+}
+
+/* Colours the filled track and thumb of the native range input. */
+.slider {
+  accent-color: t.$accent;
+}
+
+/* ---- Waveform picker + preview ------------------------------------------ */
+
+.waveform {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.waveform__select {
+  flex: 1;
+}
+
+.waveform__preview {
+  width: 6rem;
+  height: 2.5rem;
+  flex-shrink: 0;
+  border-radius: t.$radius-sm;
+  background: t.$surface-sunken;
+  border: 1px solid t.$border-subtle;
+
+  /* The trace uses stroke="currentColor", so this is what tints it. */
+  color: t.$accent;
+}
+
+.waveform__axis {
+  stroke: t.$border-subtle;
+  stroke-width: 0.5;
+}
+
+/* ---- Keyboard ----------------------------------------------------------- */
+
+.keyboard {
+  background: linear-gradient(180deg, t.$surface, t.$surface-sunken);
+  border-color: t.$border-subtle;
+}
+
+.keys {
+  position: relative;
+  display: flex;
+  gap: 1px;
+  height: 14rem;
+  user-select: none;
+}
+
+/*
+ * One slot per WHITE key. The slot is the positioning context for both the
+ * white key that fills it and the black key that straddles its right edge -
+ * which is why black keys need no separate track and the octave stays aligned
+ * however many slots are rendered.
+ */
+.key-slot {
+  position: relative;
+  flex: 1;
+  min-width: 28px;
+  height: 100%;
+}
+
+.key {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  border-radius: 0 0 t.$radius-md t.$radius-md;
   cursor: pointer;
   transition:
-    background-color 80ms ease,
-    box-shadow 80ms ease;
+    background-color t.$transition-fast,
+    box-shadow t.$transition-fast;
   user-select: none;
   -webkit-user-select: none;
+
+  &:active {
+    transform: translateY(2px);
+  }
+
+  &:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px t.$accent-ring;
+  }
 }
 
-.piano-black.is-active,
-.piano-black:active {
-  background-color: #10b981 !important; /* emerald-500 */
-  color: #f8fafc !important;
+.key--white {
+  position: absolute;
+  inset: 0;
+  padding-bottom: 0.75rem;
+  background: t.$key-white;
+  color: t.$key-white-text;
+  border: 1px solid t.$border-subtle;
+  box-shadow: 0 2px 4px rgb(0 0 0 / 0.25);
+
+  &.is-active,
+  &:active {
+    background: t.$accent;
+    color: t.$text-on-accent;
+  }
 }
 
-.piano-white-slot {
-  min-width: 28px;
+/*
+ * Black keys are 60% of a slot's width and shifted half of that to the right,
+ * so they sit ON the seam between two white keys rather than inside one.
+ */
+.key--black {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 10;
+  width: 60%;
+  height: 66.6667%;
+  transform: translateX(50%);
+  padding-bottom: 0.5rem;
+  background: t.$key-black;
+  color: t.$key-black-text;
+  border: 1px solid t.$surface-sunken;
+  box-shadow: 0 3px 6px rgb(0 0 0 / 0.45);
+
+  &.is-active,
+  &:active {
+    background: t.$accent-deep;
+    color: t.$text-on-strong;
+  }
 }
 
-/* ng-select dark theme override for the waveform picker. */
-.piano-waveform-select ::ng-deep .ng-select-container {
-  background-color: rgb(30 41 59); /* slate-800 */
-  border-color: rgb(51 65 85); /* slate-700 */
-  border-radius: 0.5rem;
-  min-height: 38px;
+.key__label {
+  font-family: t.$font-mono;
+  font-size: 11px;
+  opacity: 0.7;
 }
 
-.piano-waveform-select ::ng-deep .ng-select-container:hover {
-  border-color: rgb(71 85 105); /* slate-600 */
+.key__hotkey {
+  margin-top: 0.125rem;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: t.$accent-deep;
 }
 
-.piano-waveform-select ::ng-deep .ng-select-container .ng-value-container .ng-input > input {
-  color: rgb(241 245 249); /* slate-100 */
+.key--black .key__hotkey {
+  color: t.$accent;
 }
 
-.piano-waveform-select ::ng-deep .ng-select-container .ng-value-container .ng-value {
-  color: rgb(241 245 249); /* slate-100 */
+.keyboard__tip {
+  margin: 1rem 0 0;
+  font-size: 0.75rem;
+  color: t.$text-muted;
 }
 
-.piano-waveform-select ::ng-deep .ng-arrow-wrapper {
-  color: rgb(148 163 184); /* slate-400 */
+.kbd {
+  font-family: t.$font-mono;
+  color: t.$accent-light;
 }
 
-.piano-waveform-select ::ng-deep .ng-select-focused .ng-select-container,
-.piano-waveform-select ::ng-deep .ng-select-container:focus-within {
-  border-color: rgb(52 211 153); /* emerald-400 */
-  box-shadow: 0 0 0 2px rgb(52 211 153 / 0.25);
+/* ---- Cards (presets + saved sequences) ---------------------------------- */
+
+.card-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+
+  @media (min-width: 640px) {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  @media (min-width: 1024px) {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
 }
 
-.piano-waveform-select ::ng-deep .ng-dropdown-panel {
-  background-color: rgb(15 23 42); /* slate-900 */
-  border-color: rgb(51 65 85); /* slate-700 */
-  color: rgb(241 245 249); /* slate-100 */
+/* Saved sequences show their pattern text, so they get wider columns. */
+.card-grid--wide {
+  grid-template-columns: minmax(0, 1fr);
+
+  @media (min-width: 640px) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  @media (min-width: 1024px) {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
-.piano-waveform-select ::ng-deep .ng-dropdown-panel .ng-option {
-  background-color: transparent;
-  color: rgb(241 245 249); /* slate-100 */
+/*
+ * State lives in two independent classes because they mean different things:
+ * `is-looping` is a SETTING (will repeat next time), `is-playing` is a FACT
+ * (sounding right now). A card can be either, both, or neither.
+ */
+.card {
+  position: relative;
+  border-radius: t.$radius-lg;
+  border: 1px solid t.$border;
+  background: t.$surface-raised;
+  color: t.$text;
+  transition:
+    background-color t.$transition,
+    border-color t.$transition,
+    box-shadow t.$transition;
+
+  &.is-looping {
+    border-color: t.$accent;
+    box-shadow: 0 0 0 2px t.$accent-ring;
+  }
+
+  &.is-playing {
+    background: t.$accent-selected;
+    border-color: t.$accent;
+    box-shadow: 0 0 0 2px t.$accent-ring;
+  }
 }
 
-.piano-waveform-select ::ng-deep .ng-dropdown-panel .ng-option:hover,
-.piano-waveform-select ::ng-deep .ng-dropdown-panel .ng-option.ng-option-highlighted {
-  background-color: rgb(30 41 59); /* slate-800 */
-  color: rgb(52 211 153); /* emerald-400 */
+.card__main {
+  display: block;
+  width: 100%;
+  padding: 0.75rem 1rem;
+  /* Room for the loop switch / tools pinned bottom-right. */
+  padding-bottom: 1.75rem;
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: t.$radius-lg;
+  color: inherit;
+  cursor: pointer;
+  transition: background-color t.$transition;
+
+  &:hover {
+    background: t.$accent-wash-faint;
+  }
+
+  &:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px t.$accent-ring;
+  }
 }
 
-.piano-waveform-select ::ng-deep .ng-dropdown-panel .ng-option.ng-option-selected {
-  background-color: rgb(16 185 129 / 0.2); /* emerald-500/20 */
-  color: rgb(52 211 153); /* emerald-400 */
+.card__name {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 500;
 }
 
-.piano-waveform-select ::ng-deep .ng-dropdown-panel .ng-option.ng-option-selected.ng-option-marked {
-  background-color: rgb(16 185 129 / 0.35);
+.card__meta {
+  display: block;
+  margin-top: 0.125rem;
+  font-family: t.$font-mono;
+  font-size: 10px;
+  color: t.$text-muted;
+}
+
+.card__meta--truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card__switch {
+  position: absolute;
+  right: 0.375rem;
+  bottom: 0.375rem;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 10px;
+  color: t.$text-muted;
+  cursor: pointer;
+  user-select: none;
+}
+
+.card__switch-text.is-on {
+  color: t.$accent;
+}
+
+.card__tools {
+  position: absolute;
+  right: 0.375rem;
+  bottom: 0.375rem;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.chip {
+  padding: 0.125rem 0.5rem;
+  border: none;
+  border-radius: t.$radius-sm;
+  background: t.$surface-hover;
+  color: t.$text;
+  font-size: 10px;
+  cursor: pointer;
+  transition: background-color t.$transition;
+
+  &:hover {
+    background: t.$border-strong;
+  }
+
+  &:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px t.$accent-ring;
+  }
+}
+
+.chip--danger:hover {
+  background: t.$danger;
+  color: t.$text-on-strong;
+}
+
+/* ---- Small switch (preset loop toggle) ---------------------------------- */
+
+.mini-switch {
+  position: relative;
+  display: inline-block;
+  width: 1.75rem;
+  height: 0.875rem;
+  border-radius: t.$radius-pill;
+  background: t.$border-strong;
+  transition: background-color t.$transition;
+
+  &.is-on {
+    background: t.$accent-deep;
+  }
+}
+
+.mini-switch__knob {
+  position: absolute;
+  top: 0.125rem;
+  left: 0.125rem;
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: t.$radius-pill;
+  background: #fff;
+  transition: transform t.$transition;
+
+  .mini-switch.is-on & {
+    transform: translateX(0.875rem);
+  }
+}
+
+/*
+ * Tailwind's `sr-only`, written out. It must NOT become display:none or
+ * visibility:hidden - either would drop the real checkbox out of the tab
+ * order and make the switch keyboard-unreachable.
+ */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* ---- Playing indicator -------------------------------------------------- */
+
+.pulse-dot {
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: t.$radius-pill;
+  background: t.$accent;
+  animation: sb-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes sb-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+/* Respect a user who has asked the OS for less motion. */
+@media (prefers-reduced-motion: reduce) {
+  .pulse-dot {
+    animation: none;
+  }
+}
+
+/* ---- Save form ---------------------------------------------------------- */
+
+.save-form {
+  display: grid;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.save-form__row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+
+  @media (min-width: 640px) {
+    flex-direction: row;
+  }
+}
+
+.save-form__name {
+  flex: 1;
+}
+
+.save-form__text {
+  width: 100%;
+  font-family: t.$font-mono;
+  font-size: 0.75rem;
+  resize: vertical;
+}
+
+.save-form__error {
+  margin: 0;
+  font-size: 0.75rem;
+  color: t.$danger;
+}
+
+.empty-note {
+  margin: 0;
+  font-size: 0.75rem;
+  font-style: italic;
+  color: t.$text-faint;
+}
+
+.code {
+  font-family: t.$font-mono;
+  color: t.$text-secondary;
 }
