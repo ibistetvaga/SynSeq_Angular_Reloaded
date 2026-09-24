@@ -56,7 +56,7 @@ export class MyPage {}
 | Change detection | zoneless or zone-based — both work |
 | Browser | any with the Web Audio API |
 | Styling | none. The library ships its own CSS |
-| `provideHttpClient()` | only if you use custom presets via JSON — see [Presets](#presets) |
+| Providers | **none.** The library injects nothing it does not supply itself |
 
 **Audio needs a user gesture.** Browsers refuse to start an `AudioContext`
 until the user interacts with the page, so call any `play*` method from a click
@@ -287,28 +287,43 @@ Eight patterns ship with the library:
 ```ts
 private presets = inject(PianoPresetsService);
 
-await this.presets.loadAll();
 const text = this.presets.get('flow');
 if (text) await this.piano.playMidiSteps(text, { loop: true });
 ```
 
-`getAll()` returns everything, `keys()` lists the names.
+`getAll()` returns everything, `keys()` lists the names. All three are
+synchronous — presets are constants, not a resource.
 
 ### Custom presets
 
-Create `src/assets/piano-presets.json` in your app:
+Register them as a provider:
 
-```json
-{
-  "wakeup": "0@60:4 4@64:4 8@67:4 12@72:8",
-  "intro":  "0@[60,64,67]:8 8@72:8 16@[60,64,67,72]:8"
-}
+```ts
+// app.config.ts
+import { providePianoPresets } from 'soundboard-ng';
+
+export const appConfig: ApplicationConfig = {
+  providers: [
+    providePianoPresets({
+      wakeup: '0@60:4 4@64:4 8@67:4 12@72:8',
+      intro:  '0@[60,64,67]:8 8@72:8 16@[60,64,67,72]:8',
+    }),
+  ],
+};
 ```
 
-Your entries merge over the defaults, yours winning on a name clash. **This is
-the one feature that needs `provideHttpClient()`** in your `app.config.ts`. If
-the file is missing or the request fails, the defaults are used and nothing
-breaks.
+Your entries merge over the defaults, yours winning on a name clash. To hide a
+built-in preset, override its name with an empty string.
+
+Provide it anywhere an injector exists — application, route or component — so a
+single route can carry its own set without affecting the rest of the app.
+
+> **Changed in 0.2.0.** Custom presets used to come from
+> `src/assets/piano-presets.json`, fetched with `HttpClient`. That made
+> `provideHttpClient()` a hidden requirement — without it the library threw
+> `NullInjectorError` — and cost every other consumer a 404 on first use. If you
+> have such a JSON file, pass its contents to `providePianoPresets()` and delete
+> it. `PRESETS_URL` is gone.
 
 ---
 
@@ -386,6 +401,9 @@ it needs `NPM_TOKEN` in the repo secrets.
 - **Tailwind removed.** The library styles itself and needs no build config.
   Delete any `tailwind.config.js` entry pointing at its FESM.
 - **Themeable** via `--sb-*` custom properties.
+- **No `HttpClient`.** Custom presets are registered with
+  `providePianoPresets()` instead of being fetched from an assets JSON. The
+  library now requires no providers at all. `PRESETS_URL` removed.
 - **Chords now play.** The tokenizer split on commas, so every chord token was
   destroyed before it could be parsed — in every syntax, for every caller.
   `gentle`, `bounce` and `flow` were all affected.

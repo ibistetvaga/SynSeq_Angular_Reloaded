@@ -1,6 +1,4 @@
-import { Injectable, inject } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
-import { firstValueFrom } from 'rxjs';
+import { inject, Injectable, InjectionToken, Provider } from '@angular/core';
 
 /**
  * Cada preset es un string en el formato MIDI:step que usa el piano roll.
@@ -14,32 +12,6 @@ import { firstValueFrom } from 'rxjs';
  * steps crecientes.
  *
  * Duración de step: 200ms por default (configurable vía `stepMs`).
- *
- * ---
- *
- * **Cómo personalizar los presets SIN tocar la librería:**
- *
- * 1. En el consumidor, creá `src/assets/piano-presets.json` con tu propio
- *    set de presets. Mismo formato: `{ "nombre": "0@60:2 4@64:4" }`.
- *    Podés sobrescribir los defaults, agregar nuevos o dejar solo los
- *    que te interesen.
- *
- * 2. Asegurate de que `HttpClient` esté disponible en tu app
- *    (`provideHttpClient()` en `app.config.ts`).
- *
- * 3. Nada más. Los presets se cargan al inicializar el servicio y se
- *    mezclan con los defaults (tu JSON gana si hay claves duplicadas).
- *
- * Ejemplo de `src/assets/piano-presets.json`:
- * ```json
- * {
- *   "wakeup":  "0@60:4 4@64:4 8@67:4 12@72:8",
- *   "alertar": "0@67:1 1@72:1 2@76:4",
- *   "intro":   "0@[60,64,67]:8 8@72:8 16@[60,64,67,72]:8"
- * }
- * ```
- *
- * Si el JSON no existe o falla la carga, se usan los defaults de abajo.
  */
 export const PIANO_PRESETS_DEFAULT: Readonly<Record<string, string>> = Object.freeze({
   // C-E-G major arpeggio ascending.
@@ -74,79 +46,110 @@ export const PIANO_PRESETS_DEFAULT: Readonly<Record<string, string>> = Object.fr
 });
 
 /**
- * Ruta por defecto donde la lib busca `piano-presets.json` en el consumidor.
- * Si querés otra ruta, overrideá `PRESETS_URL` antes de inyectar el servicio
- * (o cambiá el valor acá para tu app).
+ * Extra (or replacement) presets, supplied by the consuming application.
+ *
+ * =========================================================================
+ * WHY A TOKEN AND NOT AN HTTP FETCH
+ * =========================================================================
+ *
+ * This used to be `assets/piano-presets.json`, fetched with `HttpClient`.
+ * Three things were wrong with that, and only the first is obvious:
+ *
+ *   1. `inject(HttpClient)` THROWS `NullInjectorError` in any application that
+ *      has not called `provideHttpClient()`. A library that crashes unless the
+ *      consumer adds a provider it was never told about is broken, not
+ *      configurable. This workspace's own `app.config.ts` is such an app.
+ *
+ *   2. Every consumer that never created the JSON paid a guaranteed 404 on
+ *      first use, swallowed by a `catch`. A request that is expected to fail
+ *      is not a feature.
+ *
+ *   3. It made reading a constant asynchronous, which pushed `await` into
+ *      `ngOnInit` and a `markForCheck()` after it.
+ *
+ * Presets are static strings. Supplying them through DI is synchronous,
+ * type-checked at the call site, tree-shakeable, trivially overridable per
+ * test, and costs nothing at runtime.
+ *
+ * Defaults are merged first, so a consumer's entry with the same key WINS.
+ * To drop a default entirely, override its key with an empty string.
  */
-export const PRESETS_URL = 'assets/piano-presets.json';
+export const PIANO_PRESETS = new InjectionToken<Readonly<Record<string, string>>>(
+  'soundboard-ng.piano-presets',
+  { providedIn: 'root', factory: () => ({}) },
+);
 
 /**
- * Servicio que carga presets desde `assets/piano-presets.json` del consumidor
- * y los expone como un `Record<string, string>`. Si el JSON no existe, falla
- * la red o está mal formado, devuelve los defaults de la lib.
+ * Register your own presets.
  *
- * Cualquier consumidor puede agregar presets nuevos creando ese JSON — sin
- * recompilar la lib ni tocar TypeScript.
+ * ```ts
+ * // app.config.ts
+ * providers: [
+ *   providePianoPresets({
+ *     wakeup: '0@60:4 4@64:4 8@67:4 12@72:8',
+ *     intro:  '0@[60,64,67]:8 8@72:8 16@[60,64,67,72]:8',
+ *   }),
+ * ]
+ * ```
+ *
+ * Call it once. A second call replaces the first rather than merging, which is
+ * ordinary provider behaviour and the reason this is not a multi-provider: two
+ * places defining the same preset key silently would be worse than one place
+ * defining all of them loudly.
+ */
+export function providePianoPresets(
+  presets: Readonly<Record<string, string>>,
+): Provider {
+  return { provide: PIANO_PRESETS, useValue: presets };
+}
+
+/**
+ * Exposes the preset library — defaults merged with whatever the consuming
+ * application registered through {@link providePianoPresets}.
+ *
+ * Zero configuration: with no provider at all, you get the defaults.
  */
 @Injectable({ providedIn: 'root' })
 export class PianoPresetsService {
-  private http = inject(HttpClient);
-  private cache: Readonly<Record<string, string>> | null = null;
+  private readonly extra = inject(PIANO_PRESETS);
+
+  /** Defaults first, so a consumer's entry of the same name wins. */
+  private readonly presets: Readonly<Record<string, string>> = Object.freeze({
+    ...PIANO_PRESETS_DEFAULT,
+    ...this.extra,
+  });
+
+  /** Every preset — library defaults plus the consumer's overrides. */
+  getAll(): Readonly<Record<string, string>> {
+    return this.presets;
+  }
+
+  /** The text of a preset by name, or `null` if there is no such preset. */
+  get(name: string): string | null {
+    return this.presets[name] ?? null;
+  }
+
+  /** The preset names, in declaration order (defaults first). */
+  keys(): string[] {
+    return Object.keys(this.presets);
+  }
 
   /**
-   * Devuelve todos los presets (defaults + override del consumidor).
-   * Hace una sola request HTTP; los siguientes llamados usan el cache.
+   * @deprecated Presets are no longer loaded asynchronously — call
+   * {@link getAll} instead. Kept so an existing `await presets.loadAll()`
+   * keeps working; it resolves immediately and performs no I/O.
    */
   async loadAll(): Promise<Readonly<Record<string, string>>> {
-    if (this.cache) return this.cache;
-    try {
-      const remote = await firstValueFrom(
-        this.http.get<Record<string, string>>(PRESETS_URL),
-      );
-      if (remote && typeof remote === 'object') {
-        this.cache = Object.freeze({ ...PIANO_PRESETS_DEFAULT, ...remote });
-      } else {
-        this.cache = PIANO_PRESETS_DEFAULT;
-      }
-    } catch {
-      // JSON no existe, 404, CORS, etc. → defaults.
-      this.cache = PIANO_PRESETS_DEFAULT;
-    }
-    return this.cache;
-  }
-
-  /**
-   * Versión síncrona. Útil después de que `loadAll()` se haya resuelto al
-   * menos una vez. Si nunca se cargó, devuelve los defaults.
-   */
-  getAll(): Readonly<Record<string, string>> {
-    return this.cache ?? PIANO_PRESETS_DEFAULT;
-  }
-
-  /**
-   * Devuelve el texto de un preset por nombre. Si no existe, devuelve null.
-   * Útil para el `PianoPageComponent` que muestra tarjetas por preset.
-   */
-  get(name: string): string | null {
-    return this.getAll()[name] ?? null;
-  }
-
-  /**
-   * Lista de nombres de presets (claves del Record).
-   */
-  keys(): string[] {
-    return Object.keys(this.getAll());
+    return this.presets;
   }
 }
 
 /**
- * Mantengo el export `PianoPresets` por compatibilidad con código previo
- * que lo consuma como objeto literal. Devuelve los defaults sincrónicamente.
- * Para los presets que el consumidor haya sobreescrito vía JSON, usá
- * `PianoPresetsService.get(name)` en su lugar.
+ * The library defaults as a plain object.
  *
- * @deprecated Usa `PianoPresetsService.get()` / `getAll()` para acceder
- * a los presets (incluye los del JSON del consumidor).
+ * @deprecated Use `PianoPresetsService.getAll()`, which includes the presets
+ * the consuming application registered. This const can only ever see the
+ * defaults.
  */
 export const PianoPresets: Readonly<Record<string, string>> = PIANO_PRESETS_DEFAULT;
 

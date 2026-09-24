@@ -18,9 +18,12 @@ import { routes } from './app.routes';
  *
  * 2. `provideHttpClient()`
  *    It existed for PianoPresetsService, which fetched presets over HTTP. That
- *    dependency is being removed (the consuming app routes every request
- *    through one API service, so a library reaching for HttpClient on its own
- *    cannot come along). Until then, nothing in this app makes a request.
+ *    dependency is GONE: presets now arrive through the `PIANO_PRESETS` token,
+ *    so the library asks for nothing the consumer has not offered. Nothing in
+ *    this app, or in the library, makes a request.
+ *
+ *    To add your own presets here, import `providePianoPresets` from
+ *    `soundboard-ng` and list it below.
  *
  * 3. `provideAnimationsAsync()`
  *    Deprecated since v20.2, and @angular/animations is deprecated outright
