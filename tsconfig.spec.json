@@ -5,10 +5,22 @@
   "compilerOptions": {
     "outDir": "./out-tsc/spec",
     "types": [
-      "jasmine"
+      "vitest/globals"
     ]
   },
+
+  /*
+   * BOTH projects, one runner.
+   *
+   * `@angular/build:unit-test` resolves specs through a build target, and a
+   * library project does not have one - so the old per-project Karma targets
+   * could not survive the migration as a pair. The app's target now owns every
+   * spec in the workspace, and the library's specs reach its source through
+   * the `paths` mapping in the root config.
+   */
   "include": [
-    "src/**/*.ts"
+    "src/**/*.d.ts",
+    "src/**/*.spec.ts",
+    "projects/**/*.spec.ts"
   ]
 }

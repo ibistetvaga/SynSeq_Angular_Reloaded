@@ -1,3 +1,5 @@
+import { describe, expect, it } from 'vitest';
+
 import { hasValidMidiStepToken, parseMidiStepTokens } from './midi-step-parser';
 import { PIANO_PRESETS_DEFAULT } from './piano-presets';
 
@@ -59,13 +61,13 @@ describe('parseMidiStepTokens', () => {
   it('still accepts commas and semicolons as separators BETWEEN tokens', () => {
     // The old tokenizer treated these as delimiters. The scanner ignores
     // separators entirely, so this has to keep working by construction.
-    expect(parseMidiStepTokens('0@60:2,4@64:2').length).toBe(2);
-    expect(parseMidiStepTokens('0@60:2; 4@64:2').length).toBe(2);
-    expect(parseMidiStepTokens('0@60:2\n4@64:2').length).toBe(2);
+    expect(parseMidiStepTokens('0@60:2,4@64:2')).toHaveLength(2);
+    expect(parseMidiStepTokens('0@60:2; 4@64:2')).toHaveLength(2);
+    expect(parseMidiStepTokens('0@60:2\n4@64:2')).toHaveLength(2);
   });
 
   it('skips unparseable text instead of failing the whole string', () => {
-    expect(parseMidiStepTokens('0@60:2 nonsense 4@64:2').length).toBe(2);
+    expect(parseMidiStepTokens('0@60:2 nonsense 4@64:2')).toHaveLength(2);
   });
 
   it('returns an empty list for empty input', () => {
@@ -89,9 +91,12 @@ describe('PIANO_PRESETS_DEFAULT', () => {
 
   it('parses every shipped preset to at least one event', () => {
     for (const key of Object.keys(PIANO_PRESETS_DEFAULT)) {
-      expect(parseMidiStepTokens(PIANO_PRESETS_DEFAULT[key]).length)
-        .withContext(key)
-        .toBeGreaterThan(0);
+      // The second argument is Vitest's label, and it is what tells you WHICH
+      // preset broke when this fails.
+      expect(
+        parseMidiStepTokens(PIANO_PRESETS_DEFAULT[key]).length,
+        key,
+      ).toBeGreaterThan(0);
     }
   });
 
@@ -105,7 +110,7 @@ describe('PIANO_PRESETS_DEFAULT', () => {
    */
   it('keeps the chords in the presets that are built on them', () => {
     // The opening [36,43] and the closing [36,43,55,60].
-    expect(chordsIn('gentle').length).toBe(2);
+    expect(chordsIn('gentle')).toHaveLength(2);
     expect(chordsIn('gentle')[0]).toEqual({
       startStep: 0,
       midis: [36, 43],
@@ -113,10 +118,10 @@ describe('PIANO_PRESETS_DEFAULT', () => {
     });
 
     // The off-beat triad, four times over.
-    expect(chordsIn('bounce').length).toBe(4);
+    expect(chordsIn('bounce')).toHaveLength(4);
 
     // The chord the cascade resolves onto.
-    expect(chordsIn('flow').length).toBe(1);
+    expect(chordsIn('flow')).toHaveLength(1);
     expect(chordsIn('flow')[0].midis).toEqual([48, 67, 76]);
   });
 });

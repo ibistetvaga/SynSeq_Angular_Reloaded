@@ -1,0 +1,189 @@
+////
+/// Design tokens for soundboard-ng.
+///
+/// =========================================================================
+/// HOW THIS WORKS, AND WHY IT IS NOT A :host BLOCK
+/// =========================================================================
+///
+/// Every token below resolves to `var(--sb-NAME, <default>)`. It is used at
+/// the POINT OF USE, not declared on `:host`, and that distinction is the
+/// whole design:
+///
+///   * With no consumer setup whatsoever - no stylesheet import, no build
+///     config, no theme file - the fallback applies and the library renders
+///     in the dark palette it was designed in. This matters because it ships
+///     to npm: a stranger runs `npm i soundboard-ng`, drops in
+///     `<lib-piano-page>`, and it looks right.
+///
+///   * A consumer who WANTS to re-theme sets `--sb-accent` (or any other
+///     token) on any ancestor element, and it inherits down into the
+///     component. Nothing needs to be rebuilt and nothing needs ::ng-deep.
+///
+/// Declaring the defaults in a `:host` block would have been the obvious
+/// move and would have quietly broken the second half: a property declared
+/// on :host beats one inherited from an ancestor, so the consumer's override
+/// would lose to our default.
+///
+/// =========================================================================
+/// USAGE
+/// =========================================================================
+///
+///   @use '../../styles/tokens' as t;
+///
+///   .thing {
+///     background: t.$surface;
+///     color: t.$text;
+///     border-radius: t.$radius-md;
+///   }
+///
+/// =========================================================================
+/// NAMING
+/// =========================================================================
+///
+/// Tokens are named for their ROLE (surface, text-muted, accent), not their
+/// colour (slate-800, emerald-400). A consumer re-theming to light mode sets
+/// `--sb-surface` to something pale, and a token called `--sb-slate-800`
+/// would then be a lie. The comments keep the original Tailwind name so the
+/// mapping back to the old markup stays auditable.
+////
+
+// ===========================================================================
+// SURFACES - darkest to lightest
+// ===========================================================================
+
+/// Deepest background: the piano-roll grid well, the export textarea. slate-950
+$surface-sunken: var(--sb-surface-sunken, rgb(2 6 23));
+
+/// Default panel background: cards, the note gutter. slate-900
+$surface: var(--sb-surface, rgb(15 23 42));
+
+/// Raised controls: inputs, selects, secondary buttons. slate-800
+$surface-raised: var(--sb-surface-raised, rgb(30 41 59));
+
+/// Hover state for raised controls. slate-700
+$surface-hover: var(--sb-surface-hover, rgb(51 65 85));
+
+/// Panel background at 60% - the piano roll section sits over the page grid.
+$surface-translucent: var(--sb-surface-translucent, rgb(15 23 42 / 0.6));
+
+// ===========================================================================
+// BORDERS
+// ===========================================================================
+
+/// Hairlines inside a dense grid - cell edges. slate-800
+$border-subtle: var(--sb-border-subtle, rgb(30 41 59));
+
+/// Standard border: panels, inputs. slate-700
+$border: var(--sb-border, rgb(51 65 85));
+
+/// Emphasised divider: beat markers, the note column edge. slate-600
+$border-strong: var(--sb-border-strong, rgb(71 85 105));
+
+// ===========================================================================
+// TEXT
+// ===========================================================================
+
+/// Primary text on a dark surface. slate-100
+$text: var(--sb-text, rgb(241 245 249));
+
+/// Slightly dimmer - note names in the roll gutter. slate-200
+$text-secondary: var(--sb-text-secondary, rgb(226 232 240));
+
+/// Labels, hints, help copy. slate-400
+$text-muted: var(--sb-text-muted, rgb(148 163 184));
+
+/// Lowest-emphasis text: unlabelled step numbers. slate-500
+$text-faint: var(--sb-text-faint, rgb(100 116 139));
+
+/// Text placed ON an accent fill - must stay dark. slate-900
+$text-on-accent: var(--sb-text-on-accent, rgb(15 23 42));
+
+/// Text on a strong/danger fill. slate-50
+$text-on-strong: var(--sb-text-on-strong, rgb(248 250 252));
+
+// ===========================================================================
+// ACCENT - the emerald that means "active", "playing", "on"
+// ===========================================================================
+
+/// Lightest accent: the top of a long note block. emerald-200
+$accent-lightest: var(--sb-accent-lightest, rgb(167 243 208));
+
+/// Light accent: gradient top on long blocks. emerald-300
+$accent-light: var(--sb-accent-light, rgb(110 231 183));
+
+/// THE accent. Play buttons, active keys, the playing cell. emerald-400
+$accent: var(--sb-accent, rgb(52 211 153));
+
+/// Pressed / deeper accent, gradient bottom. emerald-500
+$accent-deep: var(--sb-accent-deep, rgb(16 185 129));
+
+// ---- Accent at opacity. Kept as their own tokens rather than composed with
+// ---- colour-mix(), because a consumer overriding --sb-accent should be able
+// ---- to override these to match rather than inherit a tint of our green.
+
+/// Focus ring. accent / 40%
+$accent-ring: var(--sb-accent-ring, rgb(52 211 153 / 0.4));
+/// Focus ring, softer. accent / 25%
+$accent-ring-soft: var(--sb-accent-ring-soft, rgb(52 211 153 / 0.25));
+/// The currently-sounding cell. accent / 18%
+$accent-wash: var(--sb-accent-wash, rgb(52 211 153 / 0.18));
+/// A cell that holds part of a block. accent / 8%
+$accent-wash-faint: var(--sb-accent-wash-faint, rgb(52 211 153 / 0.08));
+/// Selected option in a list. accent-deep / 20%
+$accent-selected: var(--sb-accent-selected, rgb(16 185 129 / 0.2));
+/// Glow around a note block. accent / 40%
+$accent-glow: var(--sb-accent-glow, rgb(52 211 153 / 0.4));
+/// Stronger glow on a long block. accent / 55%
+$accent-glow-strong: var(--sb-accent-glow-strong, rgb(52 211 153 / 0.55));
+
+// ===========================================================================
+// DANGER / TRANSPORT - the rose used for stop and the playhead
+// ===========================================================================
+
+/// Stop button, playhead line and handle. rose-500
+$danger: var(--sb-danger, rgb(244 63 94));
+/// Playhead glow. danger / 60%
+$danger-glow: var(--sb-danger-glow, rgb(244 63 94 / 0.6));
+/// Hover on the stop button. rose-400
+$danger-hover: var(--sb-danger-hover, rgb(251 113 133));
+
+// ===========================================================================
+// PIANO KEYS - named for the instrument, not the palette
+// ===========================================================================
+
+$key-white: var(--sb-key-white, rgb(241 245 249));
+$key-white-text: var(--sb-key-white-text, rgb(15 23 42));
+$key-black: var(--sb-key-black, rgb(15 23 42));
+$key-black-text: var(--sb-key-black-text, rgb(148 163 184));
+
+// ===========================================================================
+// SHAPE + MOTION
+// ===========================================================================
+
+$radius-sm: var(--sb-radius-sm, 0.25rem);
+$radius-md: var(--sb-radius-md, 0.375rem);
+$radius-lg: var(--sb-radius-lg, 0.5rem);
+$radius-xl: var(--sb-radius-xl, 0.75rem);
+$radius-pill: var(--sb-radius-pill, 9999px);
+
+/// Key presses and cell hovers. Fast enough to feel physical.
+$transition-fast: var(--sb-transition-fast, 80ms ease);
+/// Buttons and toggles.
+$transition: var(--sb-transition, 150ms ease);
+
+/// Monospace stack for step numbers, note names and the export buffer, where
+/// digits must not jump around as they change.
+$font-mono: var(
+  --sb-font-mono,
+  ui-monospace,
+  SFMono-Regular,
+  Menlo,
+  Consolas,
+  monospace
+);
+
+// ===========================================================================
+// ELEVATION
+// ===========================================================================
+
+$shadow-sm: var(--sb-shadow-sm, 0 1px 4px rgb(0 0 0 / 0.5));

@@ -1,14 +1,261 @@
+@use '../../../styles/tokens' as t;
+
+/*
+ * The piano roll.
+ *
+ * Everything the markup used to get from Tailwind utilities now lives here,
+ * expressed in tokens. The grid rules below were already hand-written CSS with
+ * raw rgb() values - those colours are unchanged, just named.
+ */
+
+:host {
+  display: block;
+}
+
+.piano-roll {
+  margin-top: 1.5rem;
+  padding: 1.25rem;
+  border-radius: t.$radius-xl;
+  background: t.$surface-translucent;
+  border: 1px solid t.$border;
+
+  /* Frosts the page's grid backdrop showing through the translucent panel.
+     Degrades to a plain tint where unsupported, which is fine. */
+  backdrop-filter: blur(12px);
+}
+
+/* ---- Toolbar ------------------------------------------------------------ */
+
+.roll-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.roll-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.roll-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: t.$text-muted;
+}
+
+.roll-input,
+.roll-select {
+  background: t.$surface-raised;
+  border: 1px solid t.$border;
+  border-radius: t.$radius-md;
+  padding: 0.25rem 0.5rem;
+  color: t.$text;
+  font-size: 0.875rem;
+
+  &:focus {
+    outline: none;
+    box-shadow: 0 0 0 2px t.$accent-ring;
+  }
+}
+
+.roll-input--bpm {
+  width: 5rem;
+}
+
+/* ---- Buttons ------------------------------------------------------------ */
+
+.roll-btn {
+  padding: 0.375rem 0.75rem;
+  border: none;
+  border-radius: t.$radius-md;
+  background: t.$surface-raised;
+  color: t.$text-secondary;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: background-color t.$transition;
+
+  &:hover {
+    background: t.$surface-hover;
+  }
+
+  &:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px t.$accent-ring;
+  }
+}
+
+.roll-btn--sm {
+  padding: 0.25rem 0.75rem;
+  font-size: 0.75rem;
+}
+
+/*
+ * Transport. Green means "press to start", red means "press to stop" - the
+ * button shows the ACTION, not the state, which is why the colours invert
+ * against .is-playing rather than following it.
+ */
+.roll-btn--transport {
+  padding: 0.375rem 1rem;
+  font-weight: 500;
+  background: t.$accent;
+  color: t.$text-on-accent;
+
+  &:hover {
+    background: t.$accent-light;
+  }
+
+  &.is-playing {
+    background: t.$danger;
+    color: t.$text-on-strong;
+
+    &:hover {
+      background: t.$danger-hover;
+    }
+  }
+}
+
+/* ---- Loop switch -------------------------------------------------------- */
+
+.roll-switch {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.roll-switch__track {
+  position: relative;
+  display: inline-block;
+  width: 2rem;
+  height: 1rem;
+  border-radius: t.$radius-pill;
+  background: t.$border-strong;
+  transition: background-color t.$transition;
+
+  &.is-on {
+    background: t.$accent-deep;
+  }
+}
+
+.roll-switch__knob {
+  position: absolute;
+  top: 0.125rem;
+  left: 0.125rem;
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: t.$radius-pill;
+  background: #fff;
+  transition: transform t.$transition;
+
+  .roll-switch__track.is-on & {
+    transform: translateX(1rem);
+  }
+}
+
+/*
+ * The real checkbox: invisible, but still focusable and still announced by a
+ * screen reader. This is Tailwind's `sr-only` written out - it must NOT become
+ * display:none or visibility:hidden, either of which would take the control
+ * out of the tab order and leave the switch keyboard-unreachable.
+ */
+.roll-switch__input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+
+  &:focus-visible + .roll-switch__label {
+    outline: 2px solid t.$accent;
+    outline-offset: 2px;
+    border-radius: t.$radius-sm;
+  }
+}
+
+.roll-switch__label {
+  font-size: 0.75rem;
+  color: t.$text-muted;
+
+  &.is-on {
+    color: t.$accent;
+  }
+}
+
+/* ---- Meta + help -------------------------------------------------------- */
+
+.roll-meta {
+  margin-left: auto;
+  font-size: 0.75rem;
+  color: t.$text-muted;
+  font-family: t.$font-mono;
+}
+
+.roll-help {
+  margin-top: 0.75rem;
+  font-size: 0.75rem;
+  color: t.$text-muted;
+}
+
+/* ---- Export console ----------------------------------------------------- */
+
+.roll-export {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid t.$border;
+}
+
+.roll-export__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+.roll-export__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.roll-textarea {
+  width: 100%;
+  background: t.$surface-sunken;
+  border: 1px solid t.$border;
+  border-radius: t.$radius-md;
+  padding: 0.5rem 0.75rem;
+  color: t.$text;
+  font-family: t.$font-mono;
+  font-size: 0.75rem;
+  resize: vertical;
+
+  &:focus {
+    outline: none;
+    box-shadow: 0 0 0 2px t.$accent-ring;
+  }
+}
+
+/* ---- The grid ----------------------------------------------------------- */
+
 .roll-viewport {
   overflow-x: auto;
   overflow-y: visible;
-  background: rgb(2 6 23);
-  border-radius: 0.5rem;
-  border: 1px solid rgb(51 65 85);
+  background: t.$surface-sunken;
+  border-radius: t.$radius-lg;
+  border: 1px solid t.$border;
   position: relative;
   outline: none;
 
   &:focus-visible {
-    box-shadow: 0 0 0 2px rgb(52 211 153 / 0.5);
+    box-shadow: 0 0 0 2px t.$accent-ring;
   }
 
   &::-webkit-scrollbar {
@@ -16,19 +263,19 @@
   }
 
   &::-webkit-scrollbar-track {
-    background: rgb(15 23 42);
+    background: t.$surface;
     border-radius: 5px;
     margin: 0 4px;
   }
 
   &::-webkit-scrollbar-thumb {
-    background: rgb(71 85 105);
+    background: t.$border-strong;
     border-radius: 5px;
-    border: 2px solid rgb(15 23 42);
+    border: 2px solid t.$surface;
   }
 
   &::-webkit-scrollbar-thumb:hover {
-    background: rgb(52 211 153 / 0.6);
+    background: t.$accent-glow;
   }
 
   &::-webkit-scrollbar-corner {
@@ -48,35 +295,40 @@
   max-width: 55px;
   text-align: right;
   padding: 2px 6px;
-  color: rgb(226 232 240);
-  background: rgb(15 23 42);
-  border-right: 1px solid rgb(51 65 85);
+  color: t.$text-secondary;
+  background: t.$surface;
+  border-right: 1px solid t.$border;
   position: sticky;
   left: 0;
   z-index: 2;
   height: 28px;
+
+  &.is-black {
+    background: t.$surface-sunken;
+    color: t.$text-muted;
+  }
 }
 
-.note-col.is-black {
-  background: rgb(2 6 23);
-  color: rgb(148 163 184);
+.note-name {
+  font-family: t.$font-mono;
+  font-size: 0.75rem;
 }
 
 .step-header {
   font-size: 9px;
   font-weight: 500;
-  color: rgb(100 116 139);
+  color: t.$text-faint;
   padding: 3px 0;
-  border-bottom: 1px solid rgb(51 65 85);
+  border-bottom: 1px solid t.$border;
   text-align: center;
   width: 34px;
   min-width: 34px;
   max-width: 34px;
-}
 
-.step-header.beat-start {
-  color: rgb(148 163 184);
-  border-left: 1px solid rgb(71 85 105);
+  &.beat-start {
+    color: t.$text-muted;
+    border-left: 1px solid t.$border-strong;
+  }
 }
 
 .cell {
@@ -85,63 +337,57 @@
   width: 34px;
   min-width: 34px;
   max-width: 34px;
-  border-bottom: 1px solid rgb(30 41 59);
-  border-left: 1px solid rgb(30 41 59);
+  border-bottom: 1px solid t.$border-subtle;
+  border-left: 1px solid t.$border-subtle;
   cursor: pointer;
-  transition: background-color 80ms ease;
+  transition: background-color t.$transition-fast;
   user-select: none;
-}
 
-.cell.beat-start {
-  border-left: 1px solid rgb(71 85 105);
-}
+  &.beat-start {
+    border-left: 1px solid t.$border-strong;
+  }
 
-.cell:hover {
-  background-color: rgb(30 41 59 / 0.7);
-}
+  &:hover {
+    background-color: t.$surface-hover;
+  }
 
-.cell.is-black {
-  background-color: rgb(15 23 42 / 0.6);
-}
+  &.is-black {
+    background-color: t.$surface;
 
-.cell.is-black:hover {
-  background-color: rgb(30 41 59 / 0.9);
-}
+    &:hover {
+      background-color: t.$surface-hover;
+    }
+  }
 
-.cell.playing {
-  background-color: rgb(52 211 153 / 0.18);
-}
+  /* Order matters: a cell can be both holding a block and currently sounding,
+     and "sounding" is the one worth seeing. */
+  &.has-block {
+    background-color: t.$accent-wash-faint;
+  }
 
-.cell.has-block {
-  background-color: rgb(52 211 153 / 0.08);
+  &.playing {
+    background-color: t.$accent-wash;
+  }
 }
 
 .block {
   position: absolute;
   inset: 2px 0;
-  background: linear-gradient(
-    180deg,
-    rgb(52 211 153),
-    rgb(16 185 129)
-  );
+  background: linear-gradient(180deg, t.$accent, t.$accent-deep);
   border-radius: 3px;
-  box-shadow: 0 0 8px rgb(52 211 153 / 0.4);
+  box-shadow: 0 0 8px t.$accent-glow;
   pointer-events: none;
   z-index: 1;
+
+  &.is-long {
+    background: linear-gradient(180deg, t.$accent-light, t.$accent);
+    box-shadow:
+      0 0 10px t.$accent-glow-strong,
+      inset 0 1px 0 t.$accent-lightest;
+  }
 }
 
-.block.is-long {
-  background: linear-gradient(
-    180deg,
-    rgb(110 231 183),
-    rgb(52 211 153)
-  );
-  box-shadow:
-    0 0 10px rgb(52 211 153 / 0.55),
-    inset 0 1px 0 rgb(167 243 208 / 0.7);
-}
-
-/* ---- Playhead ---- */
+/* ---- Playhead ----------------------------------------------------------- */
 
 .playhead-track {
   position: sticky;
@@ -159,10 +405,10 @@
   top: 0;
   bottom: 0;
   width: 2px;
-  background: rgb(244 63 94);
+  background: t.$danger;
   z-index: 6;
   pointer-events: none;
-  box-shadow: 0 0 6px rgb(244 63 94 / 0.6);
+  box-shadow: 0 0 6px t.$danger-glow;
 }
 
 .playhead-handle {
@@ -171,12 +417,12 @@
   left: -8px;
   width: 18px;
   height: 18px;
-  background: rgb(244 63 94);
+  background: t.$danger;
   border-radius: 2px 2px 50% 50%;
   cursor: col-resize;
   pointer-events: auto;
   z-index: 7;
-  box-shadow: 0 1px 4px rgb(0 0 0 / 0.5);
+  box-shadow: t.$shadow-sm;
 
   &::after {
     content: '';
@@ -188,6 +434,6 @@
     height: 0;
     border-left: 5px solid transparent;
     border-right: 5px solid transparent;
-    border-top: 5px solid rgb(244 63 94);
+    border-top: 5px solid t.$danger;
   }
 }

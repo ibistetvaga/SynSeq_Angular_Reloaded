@@ -1,9 +1,35 @@
+/* To learn more about Typescript configuration file: https://www.typescriptlang.org/docs/handbook/tsconfig-json.html. */
+/* To learn more about Angular compiler options: https://angular.dev/reference/configs/angular-compiler-options. */
 {
   "compileOnSave": false,
   "compilerOptions": {
-    "baseUrl": "./",
+    /*
+     * NO baseUrl. It is deprecated in TypeScript 6 (TS5101) and stops working
+     * in 7.0. zoho-hub's tsconfig never had one, so its absence also removes a
+     * difference between the two projects.
+     *
+     * The consequence is in `paths` below: with no baseUrl there is no root to
+     * resolve a bare path against, so every TARGET has to be written relative
+     * (leading './'). The KEYS stay non-relative - those are the specifiers
+     * you type in an import, not locations.
+     */
     "outDir": "./dist/out-tsc",
     "forceConsistentCasingInFileNames": true,
+
+    /*
+     * STRICT STAYS ON, even though zoho-hub does not set it.
+     *
+     * That asymmetry is deliberate and it is the point of this repo under the
+     * source-portability plan: code that compiles under `strict` +
+     * `strictTemplates` drops into a lenient app without a single edit. The
+     * reverse is not true - lenient code moved into a strict project fails on
+     * arrival. Writing everything here under the tighter rules means the
+     * direction we actually copy in is always the safe one.
+     *
+     * It has already paid for itself: strictTemplates caught a
+     * `$event.currentTarget.focus()` in the piano roll that could only ever
+     * have worked by accident.
+     */
     "strict": true,
     "noImplicitOverride": true,
     "noPropertyAccessFromIndexSignature": true,
@@ -13,17 +39,25 @@
     "isolatedModules": true,
     "esModuleInterop": true,
     "experimentalDecorators": true,
-    "moduleResolution": "bundler",
     "importHelpers": true,
     "target": "ES2022",
-    "module": "ES2022",
-    "useDefineForClassFields": false,
+
+    /*
+     * `preserve` implies moduleResolution: bundler, so the explicit setting
+     * that used to sit here is gone. Matches zoho-hub.
+     */
+    "module": "preserve",
     "lib": ["ES2022", "dom"],
-    "types": ["node"],
-    "typeRoots": ["node_modules/@types"],
+
+    /*
+     * The library is consumed two ways: through this path mapping inside the
+     * workspace, and by copying the source files into another app. Both read
+     * public-api.ts, so what the dashboard imports is exactly what a consumer
+     * would get - there is no privileged internal route.
+     */
     "paths": {
-      "@soundboard-ng": ["projects/soundboard-ng/src/public-api.ts"],
-      "soundboard-ng": ["projects/soundboard-ng/src/public-api.ts"]
+      "@soundboard-ng": ["./projects/soundboard-ng/src/public-api.ts"],
+      "soundboard-ng": ["./projects/soundboard-ng/src/public-api.ts"]
     }
   },
   "angularCompilerOptions": {

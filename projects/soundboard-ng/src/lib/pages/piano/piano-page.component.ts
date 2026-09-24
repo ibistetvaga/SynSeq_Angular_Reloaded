@@ -6,8 +6,8 @@ import {
   OnInit,
   ViewChild,
 } from '@angular/core';
-import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+
 import {
   PianoSoundService,
   NoteName,
@@ -41,39 +41,37 @@ interface PianoSlot {
 /**
  * Lower-octave hotkeys. White keys live on the physical home rows of two
  * octaves so every white key has a unique, non-overlapping binding:
- *  - Octave 4 → Z X C V B N M  (bottom row)
- *  - Octave 5 → A S D F G H J  (home row)
+ *  - Octave 4 -> Z X C V B N M  (bottom row)
+ *  - Octave 5 -> A S D F G H J  (home row)
  * Black keys live on the row above:
  *  - Q W (E R) T Y U (I)
  * The order MUST match the order of white keys rendered for each octave.
  */
-const HOTKEYS_WHITE: { key: string; note: NoteName; octaveOffset: number }[] =
-  [
-    { key: 'z', note: 'C', octaveOffset: 0 },
-    { key: 'x', note: 'D', octaveOffset: 0 },
-    { key: 'c', note: 'E', octaveOffset: 0 },
-    { key: 'v', note: 'F', octaveOffset: 0 },
-    { key: 'b', note: 'G', octaveOffset: 0 },
-    { key: 'n', note: 'A', octaveOffset: 0 },
-    { key: 'm', note: 'B', octaveOffset: 0 },
-    { key: 'a', note: 'C', octaveOffset: 1 },
-    { key: 's', note: 'D', octaveOffset: 1 },
-    { key: 'd', note: 'E', octaveOffset: 1 },
-    { key: 'f', note: 'F', octaveOffset: 1 },
-    { key: 'g', note: 'G', octaveOffset: 1 },
-    { key: 'h', note: 'A', octaveOffset: 1 },
-    { key: 'j', note: 'B', octaveOffset: 1 },
-  ];
-const HOTKEYS_BLACK: { key: string; note: NoteName; octaveOffset: number }[] =
-  [
-    { key: 'q', note: 'C#', octaveOffset: 0 },
-    { key: 'w', note: 'D#', octaveOffset: 0 },
-    { key: 'r', note: 'F#', octaveOffset: 0 },
-    { key: 't', note: 'G#', octaveOffset: 0 },
-    { key: 'y', note: 'A#', octaveOffset: 0 },
-    { key: 'u', note: 'C#', octaveOffset: 1 },
-    { key: 'i', note: 'D#', octaveOffset: 1 },
-  ];
+const HOTKEYS_WHITE: { key: string; note: NoteName; octaveOffset: number }[] = [
+  { key: 'z', note: 'C', octaveOffset: 0 },
+  { key: 'x', note: 'D', octaveOffset: 0 },
+  { key: 'c', note: 'E', octaveOffset: 0 },
+  { key: 'v', note: 'F', octaveOffset: 0 },
+  { key: 'b', note: 'G', octaveOffset: 0 },
+  { key: 'n', note: 'A', octaveOffset: 0 },
+  { key: 'm', note: 'B', octaveOffset: 0 },
+  { key: 'a', note: 'C', octaveOffset: 1 },
+  { key: 's', note: 'D', octaveOffset: 1 },
+  { key: 'd', note: 'E', octaveOffset: 1 },
+  { key: 'f', note: 'F', octaveOffset: 1 },
+  { key: 'g', note: 'G', octaveOffset: 1 },
+  { key: 'h', note: 'A', octaveOffset: 1 },
+  { key: 'j', note: 'B', octaveOffset: 1 },
+];
+const HOTKEYS_BLACK: { key: string; note: NoteName; octaveOffset: number }[] = [
+  { key: 'q', note: 'C#', octaveOffset: 0 },
+  { key: 'w', note: 'D#', octaveOffset: 0 },
+  { key: 'r', note: 'F#', octaveOffset: 0 },
+  { key: 't', note: 'G#', octaveOffset: 0 },
+  { key: 'y', note: 'A#', octaveOffset: 0 },
+  { key: 'u', note: 'C#', octaveOffset: 1 },
+  { key: 'i', note: 'D#', octaveOffset: 1 },
+];
 
 const WHITE_SEMITONES: NoteName[] = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
 const BLACK_AFTER: Record<NoteName, NoteName | null> = {
@@ -101,12 +99,7 @@ const HOTKEY_BY_NOTE_OCTAVE: Record<string, string> = (() => {
 @Component({
   selector: 'lib-piano-page',
   standalone: true,
-  imports: [
-    CommonModule,
-    FormsModule,
-    PianoSequencerComponent,
-    PianoRollComponent,
-  ],
+  imports: [FormsModule, PianoSequencerComponent, PianoRollComponent],
   templateUrl: './piano-page.component.html',
   styleUrl: './piano-page.component.scss',
 })
@@ -139,19 +132,23 @@ export class PianoPageComponent implements OnInit, OnDestroy {
 
   public presetKeys: string[] = [];
 
-  /** Loop state per preset key. When true, the preset keeps re-playing
-   * until the user toggles it off or stops everything. */
+  /**
+   * Loop state per preset key. When true, the preset keeps re-playing until
+   * the user toggles it off or stops everything.
+   */
   public loopingPresets = new Set<string>();
-  /** Which preset is currently playing (or queued via loop). Used to
-   * illuminate the active card. Only one preset plays at a time. */
+  /**
+   * Which preset is currently playing (or queued via loop). Used to illuminate
+   * the active card. Only one preset plays at a time.
+   */
   public playingPreset: string | null = null;
 
   /** Human label for each preset, derived from its key. */
   public presetLabels: Record<string, string> = {
-    success: 'Éxito',
+    success: '\u00c9xito',
     gentle: 'Suave',
     flow: 'Flujo',
-    alert: 'Atención',
+    alert: 'Atenci\u00f3n',
     bounce: 'Rebote',
     chime: 'Campana',
     test: 'Test 1',
@@ -184,9 +181,16 @@ export class PianoPageComponent implements OnInit, OnDestroy {
 
   /**
    * SVG path string for the waveform preview, sampled across 1 full cycle
-   * (96px wide, 40px tall, centered on y=20). For composite voices we draw
-   * a simplified harmonic-spectrum bar instead of an oscillator shape, since
+   * (96px wide, 40px tall, centered on y=20). For composite voices we draw a
+   * simplified harmonic-spectrum bar instead of an oscillator shape, since
    * those voices are mixes of several oscillators.
+   *
+   * KNOWN ISSUE: the recipes below are a COPY of
+   * PianoSoundService.VOICE_RECIPES and have already drifted from it - see the
+   * commit message. The preview is therefore approximate for `softPad` and
+   * `lead`. Fixing it means exposing the recipes from the service and deleting
+   * this table; deliberately left for its own change so a styling diff does not
+   * hide a behavioural one.
    */
   public waveformPath(w: OscillatorType | VoiceName): string {
     const compositeRecipes: Record<string, Harmonic[]> = {
@@ -254,27 +258,25 @@ export class PianoPageComponent implements OnInit, OnDestroy {
       ],
     };
 
-    // Composite voice → harmonic-spectrum view (vertical bars centered).
-    if (compositeRecipes[w]) {
-      const rec = compositeRecipes[w];
-      const maxMult = Math.max(...rec.map((r) => r.mult));
-      const barCount = rec.length;
+    // Composite voice -> harmonic-spectrum view (vertical bars centered).
+    const recipe = compositeRecipes[w];
+    if (recipe) {
+      const barCount = recipe.length;
       const gap = 2;
       const totalW = 92; // leave a small margin
       const barW = (totalW - gap * (barCount - 1)) / barCount;
       let path = '';
-      rec.forEach((h, i) => {
+      recipe.forEach((h, i) => {
         const x = 2 + i * (barW + gap);
         const hPx = Math.max(2, h.gain * 16);
         const yTop = 20 - hPx;
         const yBot = 20 + hPx;
         path += `M${x.toFixed(1)} ${yBot.toFixed(1)} L${x.toFixed(1)} ${yTop.toFixed(1)} `;
-        void maxMult;
       });
       return path.trim();
     }
 
-    // Raw oscillator shape — sample one full period across 96 px.
+    // Raw oscillator shape - sample one full period across 96 px.
     const samples = 48;
     const w2 = 96;
     const amp = 16;
@@ -318,9 +320,6 @@ export class PianoPageComponent implements OnInit, OnDestroy {
     this.rebuildSlots();
     this.piano.setVolume(this.volume / 100);
     this.piano.setWaveform(this.waveform);
-    // Carga presets desde assets/piano-presets.json (si existe) +
-    // defaults de la lib. No requiere recompilar la librería para
-    // agregar presets nuevos: basta con editar el JSON del consumidor.
     await this.presetsSvc.loadAll();
     this.presetKeys = this.presetsSvc.keys();
     this.cdr.markForCheck();
@@ -332,9 +331,8 @@ export class PianoPageComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * Rebuilds the rendered keyboard based on the current baseOctave.
-   * Hotkeys are assigned to both octaves (octaveOffset 0 = baseOctave,
-   * octaveOffset 1 = baseOctave + 1).
+   * Rebuilds the rendered keyboard based on the current baseOctave. Hotkeys
+   * are assigned to both octaves (octaveOffset 0 = baseOctave, 1 = +1).
    */
   public rebuildSlots(): void {
     const slots: PianoSlot[] = [];
@@ -401,9 +399,9 @@ export class PianoPageComponent implements OnInit, OnDestroy {
 
   /**
    * Click handler on a preset card. Toggles playback:
-   *  - If this preset is already playing → stop everything.
-   *  - Otherwise → stop everything else and play this one (looping
-   *    if the loop switch is on).
+   *  - If this preset is already playing -> stop everything.
+   *  - Otherwise -> stop everything else and play this one (looping if the
+   *    loop switch is on).
    */
   public playPreset(key: string): void {
     const text = this.presetsSvc.get(key);
@@ -418,10 +416,9 @@ export class PianoPageComponent implements OnInit, OnDestroy {
     this.piano.playMidiSteps(text, {
       waveform: this.waveform,
       loop: shouldLoop,
-      // Only clear the playing indicator when the pattern finishes
-      // naturally — looping presets keep it on until the user stops
-      // them. `key` is captured by closure so the callback knows
-      // which preset ended.
+      // Only clear the playing indicator when the pattern finishes naturally -
+      // looping presets keep it on until the user stops them. `key` is
+      // captured by closure so the callback knows which preset ended.
       onEnd: shouldLoop
         ? undefined
         : () => {
@@ -435,8 +432,8 @@ export class PianoPageComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * Click handler on the loop switch. Toggles whether this preset
-   * should loop on next play. Does NOT start/stop playback.
+   * Click handler on the loop switch. Toggles whether this preset should loop
+   * on next play. Does NOT start/stop playback.
    */
   public togglePresetLoop(key: string): void {
     if (this.loopingPresets.has(key)) {
@@ -453,24 +450,6 @@ export class PianoPageComponent implements OnInit, OnDestroy {
 
   public isPresetPlaying(key: string): boolean {
     return this.playingPreset === key;
-  }
-
-  /**
-   * Returns the class list for a preset card. Active cards (currently
-   * playing) get an emerald tint and ring; looping-but-not-playing cards
-   * get just the ring; idle cards get the default slate look.
-   */
-  public presetCardClasses(key: string): Record<string, boolean> {
-    const playing = this.isPresetPlaying(key);
-    const looping = this.isPresetLooping(key);
-    return {
-      'bg-slate-800/80': !playing,
-      'bg-emerald-500/20': playing,
-      'border-slate-700': !playing && !looping,
-      'border-emerald-400': playing || looping,
-      'ring-2': playing || looping,
-      'ring-emerald-400': playing || looping,
-    };
   }
 
   public stopEverything(): void {
@@ -495,7 +474,7 @@ export class PianoPageComponent implements OnInit, OnDestroy {
     );
     if (!added) {
       this.sequenceInputError =
-        'Formato inválido. Usá "step@midi:length" (ej. "0@60:2 4@64:4") o "midi:length" (ej. "60:2 64:4").';
+        'Formato inv\u00e1lido. Us\u00e1 "step@midi:length" (ej. "0@60:2 4@64:4") o "midi:length" (ej. "60:2 64:4").';
       this.cdr.markForCheck();
       return;
     }
@@ -559,8 +538,8 @@ export class PianoPageComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * Maps a physical keyboard key to a (note, octaveOffset) pair, or null
-   * if the key isn't bound.
+   * Maps a physical keyboard key to a (note, octaveOffset) pair, or null if
+   * the key isn't bound.
    */
   private keyToBinding(
     k: string,
@@ -573,7 +552,7 @@ export class PianoPageComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * Global keyboard listener — turns the computer keyboard into a virtual
+   * Global keyboard listener - turns the computer keyboard into a virtual
    * piano using the two-octave hotkey mapping.
    */
   @HostListener('window:keydown', ['$event'])
