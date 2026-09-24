@@ -46,3 +46,4 @@ Thumbs.db
 
 # Kilo tool state (no debe ir al repo)
 /.kilo
+package-lock.json
