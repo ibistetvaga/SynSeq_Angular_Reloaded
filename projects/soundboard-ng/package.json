@@ -1,7 +1,7 @@
 {
-  "name": "soundboard-ng",
+  "name": "synseq-ng",
   "version": "0.2.0",
-  "description": "Angular 22 standalone library wrapping a synth keyboard, sequencer, presets and editable sequence cache (localStorage).",
+  "description": "Angular 22 standalone library wrapping a synth keyboard, sequencer, presets and editable sequence cache (localStorage). Zero configuration: no styling setup, no providers.",
   "keywords": [
     "angular",
     "piano",
@@ -10,7 +10,8 @@
     "webaudio",
     "music",
     "sequencer",
-    "soundboard"
+    "soundboard",
+    "synseq"
   ],
   "license": "MIT",
   "repository": {
