@@ -1,17 +1,22 @@
-name: Release soundboard-ng
+name: Release synseq-ng
 
-# Compila la librería y publica en npm cuando se pushea un tag "v*".
-# El tarball se sube al GitHub Release como asset binario.
+# Builds the library and publishes it to npm when a "v*" tag is pushed.
+# The tarball is attached to the GitHub Release as a binary asset.
 #
-# Setup previo en GitHub:
-#   1. Settings → Secrets and variables → Actions
-#      → New repository secret: NPM_TOKEN (token con "Bypass 2FA" + publish scope)
-#   2. Settings → Actions → "Allow all actions and reusable workflows"
+# One-time setup on GitHub:
+#   1. Settings -> Secrets and variables -> Actions
+#      -> New repository secret: NPM_TOKEN (a token with publish scope and
+#         "Bypass 2FA", since Actions cannot answer an OTP prompt)
+#   2. Settings -> Actions -> "Allow all actions and reusable workflows"
 #
-# Uso:
-#   git tag v0.1.1
+# Usage:
+#   git tag v0.2.0
 #   git push origin main --tags
-#   → el workflow publica en npm y crea el GitHub Release.
+#   -> publishes to npm and creates the GitHub Release.
+#
+# The version comes from projects/soundboard-ng/package.json, NOT from the tag.
+# Bump it in the same commit you tag, or npm will reject a republish of an
+# already-published version.
 
 on:
   push:
@@ -32,25 +37,30 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
 
       - name: Install
-        run: npm ci
+        run: npm install
+
+      # Publishing something whose tests have never been run is how the chord
+      # bug survived for the entire life of the project.
+      - name: Test
+        run: npm test
 
       - name: Build library
         run: npm run build:lib
 
-      - name: Bump version + pack
+      - name: Pack
         id: pack
         run: |
           VERSION=$(node -p "require('./projects/soundboard-ng/package.json').version")
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-          npm pack dist/soundboard-ng --pack-destination .
-          ls -la soundboard-ng-*.tgz
+          npm pack dist/synseq-ng --pack-destination .
+          ls -la synseq-ng-*.tgz
 
       - name: Publish to npm
-        working-directory: dist/soundboard-ng
+        working-directory: dist/synseq-ng
         run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -59,14 +69,17 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: soundboard-ng ${{ steps.pack.outputs.version }}
+          name: synseq-ng ${{ steps.pack.outputs.version }}
           body: |
-            Librería Angular 17 standalone del soundboard (sintetizador + secuenciador + presets).
+            Angular 22 standalone library: synthesiser, piano keyboard,
+            sequencer, piano roll, presets and a localStorage sequence cache.
 
-            ## Instalación
+            No styling setup and no providers required.
+
+            ## Install
 
             ```bash
-            npm install soundboard-ng@${{ steps.pack.outputs.version }}
+            npm install synseq-ng@${{ steps.pack.outputs.version }}
             ```
-          files: soundboard-ng/soundboard-ng-${{ steps.pack.outputs.version }}.tgz
+          files: synseq-ng-${{ steps.pack.outputs.version }}.tgz
           fail_on_unmatched_files: true
