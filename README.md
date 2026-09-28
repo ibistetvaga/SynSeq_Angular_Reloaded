@@ -1,24 +1,28 @@
-# soundboard-ng
+# synseq-ng
 
 Angular 22 standalone library: a browser-native synthesiser (Web Audio API), a
 piano keyboard, a 16-step sequencer, an infinite piano roll, preset patterns
 and a `localStorage`-backed sequence cache.
 
-No samples, no external assets, **no styling setup**.
+No samples, no external assets, **no styling setup, no providers**.
+
+> Formerly published as `soundboard-ng`. This fork has diverged far enough —
+> Angular 22, no Tailwind, no `HttpClient`, and a tokenizer that actually parses
+> chords — that it carries its own name.
 
 ---
 
 ## Install
 
 ```bash
-npm install soundboard-ng
+npm install synseq-ng
 ```
 
 That is the whole installation. Drop the component in:
 
 ```ts
 import { Component } from '@angular/core';
-import { PianoPageComponent } from 'soundboard-ng';
+import { PianoPageComponent } from 'synseq-ng';
 
 @Component({
   standalone: true,
@@ -28,9 +32,10 @@ import { PianoPageComponent } from 'soundboard-ng';
 export class MyPage {}
 ```
 
-> **Upgrading from 0.1.x?** Delete the `tailwind.config.js` entry that pointed
-> at `node_modules/soundboard-ng/fesm2022/**` — it does nothing now. The
-> library carries its own styles.
+> **Coming from `soundboard-ng` 0.1.x?** Change the package name in your
+> imports, and delete the `tailwind.config.js` entry that pointed at
+> `node_modules/soundboard-ng/fesm2022/**` — it does nothing now. The library
+> carries its own styles.
 
 ---
 
@@ -109,6 +114,9 @@ of use — so an inherited value wins, and you never need `::ng-deep`.
 
 **Shape & motion** — `--sb-radius-sm|md|lg|xl|pill`, `--sb-transition-fast`,
 `--sb-transition`, `--sb-font-mono`, `--sb-shadow-sm`
+
+The prefix stays `--sb-*` rather than `--synseq-*`: renaming ~50 tokens would
+break every consumer's theme to gain nothing but tidiness.
 
 The opacity variants are separate tokens rather than computed from `--sb-accent`
 on purpose: if you re-theme the accent, you can match the washes to it instead
@@ -269,9 +277,9 @@ sequential, write increasing steps.
 
 Separators between tokens can be spaces, newlines, commas or semicolons.
 
-> Chords did not work before **0.2.0** — the tokenizer split on commas, which
+> Chords did not work in `soundboard-ng` — the tokenizer split on commas, which
 > tore every `[60,64,67]` apart before it could be read. If you have patterns
-> saved from an older version, their chords will start sounding now.
+> saved from that version, their chords will start sounding now.
 
 MIDI reference: C4 = 60, A4 = 69 = 440 Hz. Valid range 0–127; out-of-range
 numbers are dropped from a chord rather than voiding it.
@@ -300,7 +308,7 @@ Register them as a provider:
 
 ```ts
 // app.config.ts
-import { providePianoPresets } from 'soundboard-ng';
+import { providePianoPresets } from 'synseq-ng';
 
 export const appConfig: ApplicationConfig = {
   providers: [
@@ -318,7 +326,7 @@ built-in preset, override its name with an empty string.
 Provide it anywhere an injector exists — application, route or component — so a
 single route can carry its own set without affecting the rest of the app.
 
-> **Changed in 0.2.0.** Custom presets used to come from
+> **Changed from `soundboard-ng`.** Custom presets used to come from
 > `src/assets/piano-presets.json`, fetched with `HttpClient`. That made
 > `provideHttpClient()` a hidden requirement — without it the library threw
 > `NullInjectorError` — and cost every other consumer a 404 on first use. If you
@@ -353,15 +361,24 @@ storage are swallowed — the in-memory copy keeps working for the session.
 ```bash
 npm install
 npm start          # dashboard at http://localhost:4200
-npm test
-npm run build:lib  # -> dist/soundboard-ng/
+npm test           # both projects, exits when done
+npm run test:watch # the app's specs, interactive
+npm run build:lib  # -> dist/synseq-ng/
 ```
+
+`npm test` runs `ng test` **twice**, once per project. That is not redundancy:
+the unit-test builder resolves its `include` globs against each project's
+`sourceRoot`, so a single invocation can only ever see one project's specs.
+Running only the app's target is how both library suites went unnoticed —
+`npm test` reported "1 passed" while three spec files existed.
+
+Use `test:app` or `test:lib` to run one side.
 
 The dashboard imports the library from **source**, not from `dist/`, so
 `npm start` always runs what you are editing — no `build:lib` step first.
 
 ```
-projects/soundboard-ng/src/
+projects/soundboard-ng/src/        (directory name predates the rename)
   public-api.ts                     what consumers can import
   lib/
     styles/_tokens.scss             the design tokens
@@ -385,21 +402,26 @@ src/                                the dev dashboard (not published)
 ```bash
 npm run build:lib
 # bump version in projects/soundboard-ng/package.json
-cd dist/soundboard-ng && npm publish --access public
+cd dist/synseq-ng && npm publish --access public
 ```
 
-There is also a tag-triggered workflow in `.github/workflows/release.yml`;
-it needs `NPM_TOKEN` in the repo secrets.
+`build:lib` only produces `dist/synseq-ng/` — it does not publish. Publishing is
+the separate `npm publish` above, run from inside that directory.
+
+There is also a tag-triggered workflow in `.github/workflows/release.yml` which
+tests, builds, publishes and attaches the tarball to a GitHub Release. It needs
+`NPM_TOKEN` in the repo secrets, and it reads the version from the library's
+`package.json` rather than from the tag — bump it in the commit you tag.
 
 ---
 
 ## Changelog
 
-### 0.2.0
+### 0.2.0 — first release as `synseq-ng`
 
+- **Renamed** from `soundboard-ng`.
 - **Angular 22**, zoneless-compatible. Angular 17 is no longer supported.
 - **Tailwind removed.** The library styles itself and needs no build config.
-  Delete any `tailwind.config.js` entry pointing at its FESM.
 - **Themeable** via `--sb-*` custom properties.
 - **No `HttpClient`.** Custom presets are registered with
   `providePianoPresets()` instead of being fetched from an assets JSON. The
