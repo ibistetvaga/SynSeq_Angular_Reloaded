@@ -1,5 +1,5 @@
 import { Routes } from '@angular/router';
-import { PianoPageComponent } from '@soundboard-ng';
+import { PianoPageComponent } from 'synseq-ng';
 
 export const routes: Routes = [
   {
