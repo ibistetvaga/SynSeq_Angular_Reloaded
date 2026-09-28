@@ -23,7 +23,7 @@ import { routes } from './app.routes';
  *    this app, or in the library, makes a request.
  *
  *    To add your own presets here, import `providePianoPresets` from
- *    `soundboard-ng` and list it below.
+ *    `synseq-ng` and list it below.
  *
  * 3. `provideAnimationsAsync()`
  *    Deprecated since v20.2, and @angular/animations is deprecated outright
