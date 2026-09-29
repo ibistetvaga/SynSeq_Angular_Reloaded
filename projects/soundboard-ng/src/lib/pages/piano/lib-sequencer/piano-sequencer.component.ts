@@ -562,27 +562,37 @@ export class PianoSequencerComponent implements OnInit, OnChanges, OnDestroy {
   /**
    * Serialises the grid to `step@midi:length` tokens.
    *
-   * Walks `rows` rather than the grid's own keys, because a row carries the
-   * NoteName needed to compute a MIDI number - recovering it by splitting the
-   * key string would mean re-parsing what we already have typed.
+   * ORDER IS PART OF THE CONTRACT: by step, then by pitch ascending. A chord
+   * therefore reads low to high, the way chords are written.
+   *
+   * It used to sort on the step ALONE, which left the order within a step to
+   * whatever `rows` happened to be — and `rows` runs top-down because that is
+   * how a piano roll is drawn, so chords came out backwards. Nobody chose
+   * that; it was two unrelated decisions meeting in a stable sort. Reordering
+   * the rows for any UI reason would have silently rewritten the exported
+   * text, the clipboard and the textarea.
+   *
+   * The order never mattered to playback — every token carries its own step —
+   * but this text is something people copy, diff and paste back, so it has to
+   * be stable.
    */
   public gridAsText(): string {
-    const out: string[] = [];
+    const tokens: Array<{ step: number; midi: number; length: number }> = [];
     for (const row of this.rows) {
-      const blocks = this.grid[this.rowKey(row)] ?? [];
-      for (const b of blocks) {
-        const midi = pitchToMidi({ note: row.note, octave: row.octave });
-        if (midi == null) continue;
-        out.push(`${b.start}@${midi}:${Math.max(1, b.length)}`);
+      const midi = pitchToMidi({ note: row.note, octave: row.octave });
+      if (midi == null) continue;
+      for (const b of this.grid[this.rowKey(row)] ?? []) {
+        tokens.push({
+          step: b.start,
+          midi,
+          length: Math.max(1, b.length),
+        });
       }
     }
-    // Sort by step for readability.
-    out.sort((a, b) => {
-      const sa = parseInt(a.split('@')[0], 10);
-      const sb = parseInt(b.split('@')[0], 10);
-      return sa - sb;
-    });
-    return out.join(' ');
+
+    tokens.sort((a, b) => a.step - b.step || a.midi - b.midi);
+
+    return tokens.map((t) => `${t.step}@${t.midi}:${t.length}`).join(' ');
   }
 
   /**
