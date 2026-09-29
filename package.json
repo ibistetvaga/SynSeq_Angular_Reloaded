@@ -1,13 +1,16 @@
 {
-  "name": "soundboard-ng-workspace",
+  "name": "synseq-ng-workspace",
   "version": "0.0.0",
   "scripts": {
     "ng": "ng",
     "start": "ng serve",
     "build": "ng build soundboard-app",
-    "build:lib": "ng build soundboard-ng",
+    "build:lib": "ng build synseq-ng",
     "watch": "ng build --watch --configuration development",
-    "test": "ng test"
+    "test": "ng test soundboard-app --watch=false && ng test synseq-ng --watch=false",
+    "test:app": "ng test soundboard-app --watch=false",
+    "test:lib": "ng test synseq-ng --watch=false",
+    "test:watch": "ng test soundboard-app"
   },
   "private": true,
   "dependencies": {

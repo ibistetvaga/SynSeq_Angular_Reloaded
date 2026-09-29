@@ -51,13 +51,21 @@
 
     /*
      * The library is consumed two ways: through this path mapping inside the
-     * workspace, and by copying the source files into another app. Both read
+     * workspace, and by `npm install synseq-ng` once published. Both read
      * public-api.ts, so what the dashboard imports is exactly what a consumer
      * would get - there is no privileged internal route.
+     *
+     * `synseq-ng` is the published specifier, so a file written against the
+     * dashboard compiles unchanged in a consuming app. `@synseq-ng` is kept
+     * as an alias for the same target because the existing source uses it.
+     *
+     * The DIRECTORY is still `projects/soundboard-ng/` - renaming it means
+     * moving every file in it, which buys nothing the package name has not
+     * already bought. Its own tracked as follow-up.
      */
     "paths": {
-      "@soundboard-ng": ["./projects/soundboard-ng/src/public-api.ts"],
-      "soundboard-ng": ["./projects/soundboard-ng/src/public-api.ts"]
+      "@synseq-ng": ["./projects/soundboard-ng/src/public-api.ts"],
+      "synseq-ng": ["./projects/soundboard-ng/src/public-api.ts"]
     }
   },
   "angularCompilerOptions": {
