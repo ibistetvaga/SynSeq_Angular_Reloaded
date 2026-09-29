@@ -31,7 +31,7 @@ describe('PianoSequencerComponent', () => {
       expect(cmp.gridAsText()).toBe(source);
     });
 
-    it('keeps a chord's notes on their shared step', () => {
+    it('keeps the notes of a chord on their shared step', () => {
       cmp.loadFromText('2@[60,64,67]:4');
 
       const text = cmp.gridAsText();
