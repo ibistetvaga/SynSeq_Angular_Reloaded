@@ -129,7 +129,7 @@ export class PianoSequencerComponent implements OnInit, OnChanges, OnDestroy {
   private audioCtx: AudioContext | null = null;
   private timerHandle: TimerHandle | null = null;
   /**
-   * Notes queued by `scheduleStep` but not yet fired. Tracked so `stop()` can
+   * Notes queued by `scheduleStep` but not yet built. Tracked so `stop()` can
    * cancel them: the look-ahead runs 100 ms ahead of the playhead, so without
    * this a note sounds AFTER the transport has visibly stopped.
    */
@@ -376,9 +376,12 @@ export class PianoSequencerComponent implements OnInit, OnChanges, OnDestroy {
   }
 
   /**
-   * Sounds a pitch and tells the host about it. Every audition in this
-   * component goes through here so `notePreview` cannot fall out of sync with
-   * what is audible again.
+   * Sounds a pitch immediately and tells the host about it. This is the PAINT
+   * path - a cell being clicked, where "now" is the right answer.
+   *
+   * Playback does not come through here: a step has a known place on the audio
+   * clock, so it goes to `piano.scheduleNoteAt()` instead. Both paths emit
+   * `notePreview`.
    */
   private audition(pitch: Pitch, durationMs: number): void {
     this.piano.playNote(pitch, { waveform: this.waveform, durationMs });
@@ -687,14 +690,20 @@ export class PianoSequencerComponent implements OnInit, OnChanges, OnDestroy {
   }
 
   /**
-   * KNOWN LIMITATION: this computes `audioTime` on the audio clock and then
-   * throws it away, because `playNote()` schedules at `currentTime`. So the
-   * look-ahead buys correct ORDERING but not sample-accurate placement, and
-   * playback carries ordinary setTimeout jitter.
+   * Queues every note that starts at `stepIdx`, pinned to `audioTime`.
    *
-   * Fixing it properly means a service method that accepts an explicit target
-   * time (the private `scheduleNote` already does exactly that internally).
-   * Left for its own change so it can be listened to on its own.
+   * `audioTime` used to be computed and then thrown away: the notes went out
+   * through `playNote()`, which can only schedule at `currentTime`. So the
+   * look-ahead bought correct ORDERING and nothing else, and the pulse carried
+   * whatever jitter `setTimeout` happened to have — audible as an unsteady
+   * beat. `scheduleNoteAt()` takes the target, so the jitter now moves only
+   * WHEN the nodes are built, never when the sound starts.
+   *
+   * The `setTimeout` stays for a reason: deferring construction until an event
+   * is nearly due is what lets `stop()` cancel a note that has not been built
+   * yet. Handing every note to the audio clock the moment it is known would
+   * put it beyond recall — only `stopAll()` could catch it, and that would
+   * also silence anything the keyboard was holding.
    */
   private scheduleStep(stepIdx: number, audioTime: number): void {
     if (!this.audioCtx) return;
@@ -703,11 +712,16 @@ export class PianoSequencerComponent implements OnInit, OnChanges, OnDestroy {
       const block = this.blockStartingAt(row, stepIdx);
       if (!block) continue;
       const noteDurMs = block.length * this.stepMs;
+      const pitch: Pitch = { note: row.note, octave: row.octave };
       const handle = setTimeout(() => {
         this.pendingNoteTimers = this.pendingNoteTimers.filter(
           (t) => t !== handle,
         );
-        this.audition({ note: row.note, octave: row.octave }, noteDurMs);
+        this.piano.scheduleNoteAt(pitch, audioTime, {
+          waveform: this.waveform,
+          durationMs: noteDurMs,
+        });
+        this.notePreview.emit(pitch);
       }, delayMs);
       this.pendingNoteTimers.push(handle);
     }
