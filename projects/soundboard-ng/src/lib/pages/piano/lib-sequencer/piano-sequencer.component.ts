@@ -5,9 +5,11 @@ import {
   EventEmitter,
   HostListener,
   Input,
+  OnChanges,
   OnDestroy,
   OnInit,
   Output,
+  SimpleChanges,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 
@@ -57,7 +59,7 @@ const BLACK_NOTES: ReadonlySet<NoteName> = new Set<NoteName>([
   templateUrl: './piano-sequencer.component.html',
   styleUrl: './piano-sequencer.component.scss',
 })
-export class PianoSequencerComponent implements OnInit, OnDestroy {
+export class PianoSequencerComponent implements OnInit, OnChanges, OnDestroy {
   /** Voice used for all scheduled notes. */
   @Input() waveform: OscillatorType | VoiceName = 'softPad';
   /** Octave the grid starts at (the lowest row). */
@@ -65,6 +67,13 @@ export class PianoSequencerComponent implements OnInit, OnDestroy {
   /** Number of octaves to show. */
   @Input() octaveCount = 2;
 
+  /**
+   * Fires whenever a note is auditioned from this component - painting a cell,
+   * or a step sounding during playback.
+   *
+   * This used to be declared and never emitted, so anything bound to it waited
+   * forever. If you only want paint previews, compare against `isPlaying`.
+   */
   @Output() notePreview = new EventEmitter<Pitch>();
 
   /** Steps per loop. 16 by default. */
@@ -119,6 +128,12 @@ export class PianoSequencerComponent implements OnInit, OnDestroy {
   private nextStepTime = 0;
   private audioCtx: AudioContext | null = null;
   private timerHandle: TimerHandle | null = null;
+  /**
+   * Notes queued by `scheduleStep` but not yet fired. Tracked so `stop()` can
+   * cancel them: the look-ahead runs 100 ms ahead of the playhead, so without
+   * this a note sounds AFTER the transport has visibly stopped.
+   */
+  private pendingNoteTimers: ReturnType<typeof setTimeout>[] = [];
 
   constructor(
     private piano: PianoSoundService,
@@ -128,6 +143,22 @@ export class PianoSequencerComponent implements OnInit, OnDestroy {
   ngOnInit(): void {
     this.recomputeRows();
     this.recomputeStepMs();
+  }
+
+  /**
+   * `baseOctave` and `octaveCount` are documented Inputs, so they have to keep
+   * working after the first render. Without this the rows were frozen at
+   * whatever they were during ngOnInit and rebinding did nothing.
+   */
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes['baseOctave'] || changes['octaveCount']) {
+      // Only after ngOnInit has built the first set; the first call arrives
+      // before it and would otherwise build rows twice.
+      if (this.rows.length) {
+        this.recomputeRows();
+        this.cdr.markForCheck();
+      }
+    }
   }
 
   ngOnDestroy(): void {
@@ -221,10 +252,26 @@ export class PianoSequencerComponent implements OnInit, OnDestroy {
     }
   }
 
+  /**
+   * Plays the grid exactly as the exported text describes it.
+   *
+   * This used to call `playSequence(gridAsSequence())`, and that was audibly
+   * wrong: `SequenceStep[]` carries durations but not positions, so every
+   * block was packed back-to-back with legato and the RESTS DISAPPEARED. A
+   * grid with a note at step 0 and another at step 8 played them adjacent.
+   * The button therefore disagreed with the textarea beside it, and with the
+   * way the piano page plays the very same pattern.
+   *
+   * Routing through `playMidiSteps(gridAsText())` uses one engine, one parse
+   * and one notion of what a step is.
+   */
   public playExported(): void {
-    const steps = this.gridAsSequence();
-    if (!steps.length) return;
-    this.piano.playSequence(steps, { waveform: this.waveform });
+    const text = this.gridAsText();
+    if (!text) return;
+    this.piano.playMidiSteps(text, {
+      waveform: this.waveform,
+      stepMs: this.stepMs,
+    });
   }
 
   /**
@@ -322,13 +369,20 @@ export class PianoSequencerComponent implements OnInit, OnDestroy {
         willToggleOnTap: false,
         hasMoved: false,
       };
-      this.piano.playNote(
-        { note: row.note, octave: row.octave },
-        { waveform: this.waveform, durationMs: 250 },
-      );
+      this.audition({ note: row.note, octave: row.octave }, 250);
     }
     this.syncTextBufferFromGrid();
     this.cdr.markForCheck();
+  }
+
+  /**
+   * Sounds a pitch and tells the host about it. Every audition in this
+   * component goes through here so `notePreview` cannot fall out of sync with
+   * what is audible again.
+   */
+  private audition(pitch: Pitch, durationMs: number): void {
+    this.piano.playNote(pitch, { waveform: this.waveform, durationMs });
+    this.notePreview.emit(pitch);
   }
 
   /**
@@ -428,7 +482,16 @@ export class PianoSequencerComponent implements OnInit, OnDestroy {
   /**
    * Exports the current grid as an array of SequenceStep ready to be passed to
    * PianoSoundService.playSequence(). Each block becomes one step (or a chord
-   * step if multiple rows have a block at the same start time).
+   * step if multiple rows have a block at the same start time), and the GAPS
+   * BETWEEN blocks become `{ restMs }` steps.
+   *
+   * Those rests used to be missing, which made the export silently wrong:
+   * `SequenceStep[]` has no notion of position, so dropping the gaps packed
+   * everything back-to-back and a sparse pattern came out as a dense one.
+   *
+   * If you want positional fidelity without this reconstruction, prefer
+   * `gridAsText()` with `playMidiSteps()` - that format stores the step of
+   * every token.
    */
   public gridAsSequence(): SequenceStep[] {
     const stepMs = this.stepMs;
@@ -457,6 +520,8 @@ export class PianoSequencerComponent implements OnInit, OnDestroy {
     flat.sort((a, b) => a.start - b.start);
     const out: SequenceStep[] = [];
     let i = 0;
+    /** Step index the previous group ENDED at, so gaps can be measured. */
+    let cursorStep = 0;
     while (i < flat.length) {
       const group = [flat[i]];
       let j = i + 1;
@@ -464,6 +529,13 @@ export class PianoSequencerComponent implements OnInit, OnDestroy {
         group.push(flat[j]);
         j += 1;
       }
+      const startStep = flat[i].start;
+
+      // Re-insert the silence the old implementation dropped.
+      if (startStep > cursorStep) {
+        out.push({ restMs: Math.round((startStep - cursorStep) * stepMs) });
+      }
+
       // Use the longest block length as the chord duration so chords don't get
       // cut off by shorter siblings.
       const length = Math.max(...group.map((g) => g.length));
@@ -478,6 +550,7 @@ export class PianoSequencerComponent implements OnInit, OnDestroy {
           durationMs: Math.round(length * stepMs),
         });
       }
+      cursorStep = startStep + length;
       i = j;
     }
     return out;
@@ -559,10 +632,14 @@ export class PianoSequencerComponent implements OnInit, OnDestroy {
 
   private start(): void {
     const ctx = this.piano.getAudioContext();
-    if (ctx) {
-      this.audioCtx = ctx;
-      this.audioCtx.resume().catch(() => undefined);
+    if (!ctx) {
+      // No Web Audio at all. Starting the transport would light the button and
+      // spin a 25 ms interval that can never produce a sound or advance the
+      // playhead, since tick() bails without a context.
+      return;
     }
+    this.audioCtx = ctx;
+    this.audioCtx.resume().catch(() => undefined);
     this.isPlaying = true;
     this.currentStep = -1;
     this.nextStepTime = 0;
@@ -577,12 +654,16 @@ export class PianoSequencerComponent implements OnInit, OnDestroy {
       clearInterval(this.timerHandle);
       this.timerHandle = null;
     }
+    // The look-ahead queues notes up to 100 ms early, so without this a note
+    // fires after the transport has visibly stopped.
+    for (const t of this.pendingNoteTimers) clearTimeout(t);
+    this.pendingNoteTimers = [];
     this.cdr.markForCheck();
   }
 
   /**
    * Look-ahead scheduler. Every 25ms checks which steps are due in the next
-   * 100ms and pre-schedules them on the audio timeline.
+   * 100ms and queues them.
    */
   private tick(): void {
     if (!this.isPlaying || !this.audioCtx) return;
@@ -605,6 +686,16 @@ export class PianoSequencerComponent implements OnInit, OnDestroy {
     }
   }
 
+  /**
+   * KNOWN LIMITATION: this computes `audioTime` on the audio clock and then
+   * throws it away, because `playNote()` schedules at `currentTime`. So the
+   * look-ahead buys correct ORDERING but not sample-accurate placement, and
+   * playback carries ordinary setTimeout jitter.
+   *
+   * Fixing it properly means a service method that accepts an explicit target
+   * time (the private `scheduleNote` already does exactly that internally).
+   * Left for its own change so it can be listened to on its own.
+   */
   private scheduleStep(stepIdx: number, audioTime: number): void {
     if (!this.audioCtx) return;
     const delayMs = Math.max(0, (audioTime - this.audioCtx.currentTime) * 1000);
@@ -612,12 +703,13 @@ export class PianoSequencerComponent implements OnInit, OnDestroy {
       const block = this.blockStartingAt(row, stepIdx);
       if (!block) continue;
       const noteDurMs = block.length * this.stepMs;
-      setTimeout(() => {
-        this.piano.playNote(
-          { note: row.note, octave: row.octave },
-          { waveform: this.waveform, durationMs: noteDurMs },
+      const handle = setTimeout(() => {
+        this.pendingNoteTimers = this.pendingNoteTimers.filter(
+          (t) => t !== handle,
         );
+        this.audition({ note: row.note, octave: row.octave }, noteDurMs);
       }, delayMs);
+      this.pendingNoteTimers.push(handle);
     }
   }
 }
