@@ -169,6 +169,12 @@ export class PianoSoundService {
   /** Loop re-trigger handle. Kept separate so stopSequence() can clean
    * up both the running scheduler and the pending loop callback. */
   private loopTimerHandle: any = null;
+  /**
+   * Per-event timers armed by `playMidiSteps`, which defers node creation
+   * until each event is due. Untracked they survived `stopSequence()`, so
+   * stopping a preset still let up to one look-ahead window of notes fire.
+   */
+  private pendingEventTimers: ReturnType<typeof setTimeout>[] = [];
   /** When loop mode is engaged, we keep a flag here so the recursive
    * re-trigger doesn't pile up if the user calls stopSequence() while
    * a re-trigger is in flight. */
@@ -454,6 +460,11 @@ export class PianoSoundService {
    *
    * Awaits `ensureRunning()` internally so the first note after a fresh
    * context (or after the browser suspended it) is never dropped.
+   *
+   * Sounds AS SOON AS POSSIBLE. If you know when a note should sound — you
+   * are writing a sequencer, a metronome, anything with a pulse — use
+   * {@link scheduleNoteAt} instead; this one cannot place a note in the
+   * future and will carry whatever jitter your timer had.
    */
   async playNote(input: string | Pitch, options?: PlayOptions): Promise<void> {
     const pitch = typeof input === 'string' ? this.parsePitch(input) : input;
@@ -464,13 +475,63 @@ export class PianoSoundService {
   }
 
   /**
+   * Places a note at an explicit moment on the AudioContext timeline.
+   *
+   * =========================================================================
+   * WHY THIS EXISTS
+   * =========================================================================
+   *
+   * A look-ahead scheduler works by deciding EARLY what should happen LATER:
+   * every 25 ms it looks 100 ms into the future and hands those events to the
+   * audio engine with their exact timestamps. The engine then places them
+   * sample-accurately, and `setTimeout`'s 5–20 ms of jitter stops mattering.
+   *
+   * That only works if the caller can say WHEN. Until now the only public
+   * entry was `playNote()`, which always schedules at `currentTime` — so the
+   * sequencer computed a precise target, called `playNote()`, and the target
+   * was discarded at the door. Its look-ahead bought correct ORDERING and
+   * nothing else; the pulse still wobbled with the timer.
+   *
+   * `targetTime` is on the **AudioContext clock** (`getAudioContext().currentTime`),
+   * in seconds — NOT `Date.now()`. A time in the past plays immediately.
+   *
+   * Synchronous and does NOT await `ensureRunning()`: by the time a promise
+   * resolved, the moment you asked for may have gone. Call `resume()` from a
+   * user gesture before the first scheduled note, exactly as the transport in
+   * `<lib-piano-sequencer>` does.
+   *
+   * ```ts
+   * const ctx = piano.getAudioContext();
+   * if (ctx) {
+   *   // A steady four-note pulse, 150 ms apart, immune to timer jitter.
+   *   const t0 = ctx.currentTime + 0.05;
+   *   ['C4', 'E4', 'G4', 'C5'].forEach((n, i) =>
+   *     piano.scheduleNoteAt(n, t0 + i * 0.15, { durationMs: 140 }),
+   *   );
+   * }
+   * ```
+   */
+  scheduleNoteAt(
+    input: string | Pitch,
+    targetTime: number,
+    options?: PlayOptions,
+  ): void {
+    const pitch = typeof input === 'string' ? this.parsePitch(input) : input;
+    if (!pitch) return;
+    const ctx = this.ctx();
+    if (!ctx || !this.masterGain) return;
+    this.scheduleNote(pitch, ctx, targetTime, options);
+  }
+
+  /**
    * Schedules a note on the AudioContext timeline at `targetTime`. All
    * envelope / oscillator events use `targetTime` as their reference so
    * the audio engine plays them sample-accurately regardless of when this
    * is called (i.e. it doesn't suffer setTimeout jitter).
    *
    * This is the only place where notes are actually created. Public
-   * `playNote` / `playChord` / `playSequence` route through here.
+   * `playNote` / `scheduleNoteAt` / `playChord` / `playSequence` route
+   * through here.
    */
   private scheduleNote(
     pitch: Pitch,
@@ -481,9 +542,11 @@ export class PianoSoundService {
     if (!this.masterGain) return;
     const key = `${pitch.note}${pitch.octave}`;
 
-    // If the same note is already playing, stop the previous one first
-    // so we never stack two oscillators on the same pitch.
-    this.stopNoteInternal(key);
+    // If the same note is already playing, release it INTO this one rather
+    // than at `currentTime`. With look-ahead scheduling two notes on the same
+    // pitch can be queued inside a single window, and cutting at "now" would
+    // silence the earlier note before it had even sounded.
+    this.stopNoteInternal(key, targetTime);
 
     const velocity = Math.max(0, Math.min(1, options?.velocity ?? 0.7));
     const voice = options?.waveform ?? this.defaultVoice;
@@ -529,15 +592,17 @@ export class PianoSoundService {
         }
       }
       const ourVoice = active;
-      // Cleanup uses wall-clock since `Date.now()` is the only safe clock
-      // here — targetTime is in audio time and would over-shoot.
+      // Cleanup is wall-clock relative to NOW, so it has to account for how
+      // far ahead the note was scheduled; otherwise a note placed 100 ms in
+      // the future is evicted from `active` that much too early.
+      const leadInMs = Math.max(0, (targetTime - ctx.currentTime) * 1000);
       setTimeout(
         () => {
           if (this.active.get(key) === ourVoice) {
             this.active.delete(key);
           }
         },
-        options.durationMs + (release + 0.1) * 1000,
+        leadInMs + options.durationMs + (release + 0.1) * 1000,
       );
     }
   }
@@ -591,24 +656,43 @@ export class PianoSoundService {
     this.stopNoteInternal(`${pitch.note}${pitch.octave}`);
   }
 
-  private stopNoteInternal(key: string): void {
+  /**
+   * Releases the voice held under `key`.
+   *
+   * `atTime` is the moment on the audio clock to release AT, defaulting to
+   * now. It matters for retriggering: when a scheduler queues the same pitch
+   * twice inside one look-ahead window, the second note must release the
+   * first one at ITS OWN start, not immediately — otherwise the earlier note
+   * is cut before it sounds.
+   */
+  private stopNoteInternal(key: string, atTime?: number): void {
     const voice = this.active.get(key);
     if (!voice) return;
     this.active.delete(key);
     try {
       const ctx = this.audioCtx;
       if (ctx) {
-        const now = ctx.currentTime;
+        // Never schedule into the past - the engine ignores it.
+        const at = Math.max(ctx.currentTime, atTime ?? ctx.currentTime);
         const release = 0.12;
-        voice.master.gain.cancelScheduledValues(now);
-        voice.master.gain.setValueAtTime(voice.master.gain.value, now);
-        voice.master.gain.exponentialRampToValueAtTime(
-          0.0001,
-          now + release,
-        );
+        const gain = voice.master.gain;
+
+        // `cancelAndHoldAtTime` keeps whatever the envelope has REACHED at
+        // `at` and drops everything after, which is exactly right for a
+        // release. The fallback reads `.value`, which is the gain right NOW
+        // and is meaningless for a future instant - acceptable only because
+        // there is nothing better on engines that lack the method.
+        if (typeof gain.cancelAndHoldAtTime === 'function') {
+          gain.cancelAndHoldAtTime(at);
+        } else {
+          gain.cancelScheduledValues(at);
+          gain.setValueAtTime(gain.value, at);
+        }
+        gain.exponentialRampToValueAtTime(0.0001, at + release);
+
         for (const p of voice.oscs) {
           try {
-            p.osc.stop(now + release + 0.01);
+            p.osc.stop(at + release + 0.01);
           } catch {
             /* osc may have already stopped */
           }
@@ -846,6 +930,11 @@ export class PianoSoundService {
       clearTimeout(this.loopTimerHandle);
       this.loopTimerHandle = null;
     }
+    // Events already handed to `setTimeout` by playMidiSteps. Untracked,
+    // these survived a stop and kept sounding for up to one look-ahead
+    // window after the user had stopped the pattern.
+    for (const t of this.pendingEventTimers) clearTimeout(t);
+    this.pendingEventTimers = [];
     this.sequenceStepIndex = 0;
   }
 
@@ -930,7 +1019,13 @@ export class PianoSoundService {
             optsBase.velocity = Math.max(0.05, Math.min(1, 0.7 * jitter));
           }
 
-          setTimeout(() => {
+          // Node creation is deferred until the event is nearly due, but the
+          // note is still pinned to `target` — so the timer's jitter moves
+          // only when the nodes are built, never when the sound starts.
+          const handle = setTimeout(() => {
+            this.pendingEventTimers = this.pendingEventTimers.filter(
+              (t) => t !== handle,
+            );
             if (!this.audioCtx) return;
             for (const midi of ev.midis) {
               const pitch = midiToPitch(midi);
@@ -938,6 +1033,7 @@ export class PianoSoundService {
               this.scheduleNote(pitch, this.audioCtx, target, optsBase);
             }
           }, delayMs);
+          this.pendingEventTimers.push(handle);
 
           nextEventIdx += 1;
         }
