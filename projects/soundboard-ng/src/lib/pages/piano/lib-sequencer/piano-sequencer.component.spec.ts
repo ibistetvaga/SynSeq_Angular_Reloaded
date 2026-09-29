@@ -36,8 +36,21 @@ describe('PianoSequencerComponent', () => {
 
       const text = cmp.gridAsText();
 
-      // Serialised one token per note, all anchored to step 2.
+      // One token per note, all anchored to step 2, written low to high.
       expect(text).toBe('2@60:4 2@64:4 2@67:4');
+    });
+
+    /*
+     * The ordering used to be an accident: the sort keyed on step alone, so
+     * within a step the tokens inherited whatever order `rows` had — and rows
+     * run top-down, because that is how a piano roll is drawn. Chords came out
+     * backwards. Two notes an octave apart is where row order and pitch order
+     * diverge most, so this is the case that would catch a relapse.
+     */
+    it('orders a chord low to high even across an octave boundary', () => {
+      cmp.loadFromText('0@[72,60,64]:2');
+
+      expect(cmp.gridAsText()).toBe('0@60:2 0@64:2 0@72:2');
     });
 
     it('clamps past the end of the fixed 16-step loop instead of growing', () => {
