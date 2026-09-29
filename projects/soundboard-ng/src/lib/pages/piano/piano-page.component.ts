@@ -13,7 +13,6 @@ import {
   NoteName,
   Pitch,
   VoiceName,
-  Harmonic,
 } from '../../services/piano-sound.service';
 import {
   CachedSequence,
@@ -182,84 +181,18 @@ export class PianoPageComponent implements OnInit, OnDestroy {
   /**
    * SVG path string for the waveform preview, sampled across 1 full cycle
    * (96px wide, 40px tall, centered on y=20). For composite voices we draw a
-   * simplified harmonic-spectrum bar instead of an oscillator shape, since
-   * those voices are mixes of several oscillators.
+   * harmonic-spectrum bar instead of an oscillator shape, since those voices
+   * are mixes of several oscillators.
    *
-   * KNOWN ISSUE: the recipes below are a COPY of
-   * PianoSoundService.VOICE_RECIPES and have already drifted from it - see the
-   * commit message. The preview is therefore approximate for `softPad` and
-   * `lead`. Fixing it means exposing the recipes from the service and deleting
-   * this table; deliberately left for its own change so a styling diff does not
-   * hide a behavioural one.
+   * The recipe comes from `PianoSoundService` itself. It used to be a COPY
+   * held here, which had already drifted: `softPad` and `pad` had lost their
+   * detuned oscillator pairs and `lead` one of its two saws, so the preview
+   * drew two bars where the synth plays three. A picture of the sound has to
+   * be generated from the sound, or it is a picture of nothing.
    */
   public waveformPath(w: OscillatorType | VoiceName): string {
-    const compositeRecipes: Record<string, Harmonic[]> = {
-      glass: [
-        { mult: 1, gain: 1, type: 'sine' },
-        { mult: 3.01, gain: 0.18, type: 'sine' },
-        { mult: 5.99, gain: 0.06, type: 'sine' },
-      ],
-      marimba: [
-        { mult: 1, gain: 1, type: 'triangle' },
-        { mult: 4, gain: 0.32, type: 'sine' },
-      ],
-      musicBox: [
-        { mult: 1, gain: 0.9, type: 'triangle' },
-        { mult: 2, gain: 0.35, type: 'sine' },
-        { mult: 3.01, gain: 0.18, type: 'sine' },
-        { mult: 5.98, gain: 0.08, type: 'sine' },
-      ],
-      softPiano: [
-        { mult: 1, gain: 1, type: 'sine' },
-        { mult: 2, gain: 0.18, type: 'triangle' },
-        { mult: 3, gain: 0.05, type: 'sine' },
-      ],
-      softPad: [
-        { mult: 1, gain: 0.6, type: 'sine' },
-        { mult: 2, gain: 0.1, type: 'sine' },
-      ],
-      piano: [
-        { mult: 1, gain: 1, type: 'sine' },
-        { mult: 2, gain: 0.45, type: 'triangle' },
-        { mult: 3, gain: 0.18, type: 'sine' },
-        { mult: 4, gain: 0.08, type: 'sine' },
-      ],
-      organ: [
-        { mult: 1, gain: 0.55, type: 'sine' },
-        { mult: 2, gain: 0.4, type: 'sine' },
-        { mult: 3, gain: 0.3, type: 'sine' },
-        { mult: 4, gain: 0.18, type: 'sine' },
-        { mult: 6, gain: 0.1, type: 'sine' },
-        { mult: 8, gain: 0.06, type: 'sine' },
-      ],
-      lead: [
-        { mult: 1, gain: 0.45, type: 'sawtooth' },
-        { mult: 2, gain: 0.2, type: 'sawtooth' },
-      ],
-      bass: [
-        { mult: 1, gain: 1, type: 'sine' },
-        { mult: 2, gain: 0.15, type: 'triangle' },
-      ],
-      bell: [
-        { mult: 1, gain: 0.7, type: 'sine' },
-        { mult: 2.76, gain: 0.5, type: 'sine' },
-        { mult: 5.4, gain: 0.25, type: 'sine' },
-        { mult: 8.93, gain: 0.12, type: 'sine' },
-      ],
-      pad: [
-        { mult: 1, gain: 0.55, type: 'sine' },
-        { mult: 2, gain: 0.2, type: 'sine' },
-        { mult: 3, gain: 0.1, type: 'triangle' },
-      ],
-      pluck: [
-        { mult: 1, gain: 1, type: 'triangle' },
-        { mult: 2, gain: 0.35, type: 'triangle' },
-        { mult: 3, gain: 0.12, type: 'triangle' },
-      ],
-    };
-
     // Composite voice -> harmonic-spectrum view (vertical bars centered).
-    const recipe = compositeRecipes[w];
+    const recipe = this.piano.voiceRecipe(w);
     if (recipe) {
       const barCount = recipe.length;
       const gap = 2;
@@ -316,18 +249,20 @@ export class PianoPageComponent implements OnInit, OnDestroy {
     this.cachedSequences = this.sequenceCache.list();
   }
 
-  async ngOnInit(): Promise<void> {
+  ngOnInit(): void {
     this.rebuildSlots();
     this.piano.setVolume(this.volume / 100);
     this.piano.setWaveform(this.waveform);
-    await this.presetsSvc.loadAll();
     this.presetKeys = this.presetsSvc.keys();
-    this.cdr.markForCheck();
   }
 
+  /**
+   * `stopEverything()` rather than `stopAll()` + `stopSequence()`: it also
+   * cancels a pending loop re-trigger. Without that, navigating away from a
+   * looping preset left a timer firing cycles at a destroyed component.
+   */
   ngOnDestroy(): void {
-    this.piano.stopAll();
-    this.piano.stopSequence();
+    this.piano.stopEverything();
   }
 
   /**
@@ -453,8 +388,7 @@ export class PianoPageComponent implements OnInit, OnDestroy {
   }
 
   public stopEverything(): void {
-    this.piano.stopAll();
-    this.piano.stopSequence();
+    this.piano.stopEverything();
     this.activeKeys.clear();
     this.playingCachedId = null;
     this.playingPreset = null;

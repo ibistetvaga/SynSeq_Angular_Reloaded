@@ -305,8 +305,15 @@ export class PianoSoundService {
   /**
    * Harmonic recipe for each composite voice. Pure oscillator mix — no
    * samples required. Each entry is one oscillator with its own gain.
+   *
+   * PUBLIC ON PURPOSE. While this was private, the piano page kept a second
+   * copy so it could draw the waveform preview — and that copy drifted:
+   * `softPad` lost its detuned pair, `lead` lost one of its saws, `pad` lost
+   * both detunes. The preview therefore drew a spectrum the synth does not
+   * play. Anything that needs to VISUALISE a voice must read it from here;
+   * see `voiceRecipe()`.
    */
-  private static readonly VOICE_RECIPES: Record<VoiceName, Harmonic[]> = {
+  static readonly VOICE_RECIPES: Readonly<Record<VoiceName, readonly Harmonic[]>> = {
     // ----- Soft / mellow voices ----------------------------------
 
     /**
@@ -410,6 +417,18 @@ export class PianoSoundService {
       { mult: 3, gain: 0.1, type: 'triangle' },
     ],
   };
+
+  /**
+   * The harmonic recipe behind a composite voice, or `null` for a raw
+   * oscillator type (which has no recipe — it is one oscillator).
+   *
+   * Use this to draw a voice rather than describing it a second time.
+   */
+  voiceRecipe(w: OscillatorType | VoiceName): readonly Harmonic[] | null {
+    return PianoSoundService.isVoiceName(w)
+      ? PianoSoundService.VOICE_RECIPES[w]
+      : null;
+  }
 
   /**
    * Parses a string pitch like "C4", "F#5", "Bb3" into a Pitch object.
@@ -608,6 +627,15 @@ export class PianoSoundService {
     for (const key of Array.from(this.active.keys())) {
       this.stopNoteInternal(key);
     }
+  }
+
+  /**
+   * Stops absolutely everything: held notes, the running sequence, and any
+   * pending loop re-trigger. This is the one to call from `ngOnDestroy`.
+   */
+  stopEverything(): void {
+    this.stopSequence();
+    this.stopAll();
   }
 
   /**
@@ -843,11 +871,9 @@ export class PianoSoundService {
       stepMs?: number;
       totalSteps?: number;
       loop?: boolean;
-      /** Called once when the LAST event of a one-shot finishes. In
-       * loop mode this is NOT called for the initial pass (only on
-       * each cycle's end before re-triggering, which is rarely what
-       * you want). Use it to reset UI state ("playing" highlights,
-       * etc) after a non-looping preset finishes. */
+      /** Called once when the LAST event of a one-shot finishes. NEVER
+       * called in loop mode — a loop has no end, and firing it every
+       * cycle would flicker whatever UI state it resets. */
       onEnd?: () => void;
     },
   ): Promise<void> {
@@ -877,11 +903,9 @@ export class PianoSoundService {
     /**
      * Drives one cycle. Each cycle anchors itself 50 ms in the future
      * (the look-ahead window) so events scheduled at audio time `t`
-     * always have headroom. Looping cycles re-call this function with
-     * the same options so the user can keep the same waveform / loop
-     * behavior alive across passes.
+     * always have headroom.
      */
-    const runCycle = (): { totalMs: number } => {
+    const runCycle = (): void => {
       const startAnchor = ctx.currentTime + 0.05;
       let nextEventIdx = 0;
 
@@ -925,39 +949,44 @@ export class PianoSoundService {
       };
 
       tick();
-      return { totalMs: cycleMs };
     };
 
-    const { totalMs } = runCycle();
+    runCycle();
 
-    if (loop && parsed.length) {
-      // Loop mode: schedule the next cycle to start when this one ends
-      // (plus a tiny gap so the last note's release isn't cut off). The
-      // recursion is gated by `loopActive` so stopSequence() can bail
-      // out cleanly even if a re-trigger is in flight.
+    if (loop) {
+      /*
+       * LOOP MODE.
+       *
+       * This used to be two nested setTimeouts: the outer one played pass 2
+       * and armed exactly one more, which played pass 3 and armed nothing.
+       * "Loop" therefore played three times and fell silent with the button
+       * still lit — and because three passes is a while, it read as the audio
+       * dying rather than as a counting bug.
+       *
+       * ONE handle that re-arms itself. `loopActive` gates both the callback
+       * and the re-arm, so `stopSequence()` ends it even if a re-trigger is
+       * already in flight, and the chain can never fork into two.
+       *
+       * The period is `cycleMs` exactly — not `cycleMs + releaseTail`. A loop
+       * has to repeat on its own length or it is not a loop, it is a pattern
+       * with a gap. Release tails simply overlap into the next pass, which is
+       * what a sustain pedal does; and a note that repeats immediately cuts
+       * its own previous voice inside `scheduleNote`, so nothing stacks up.
+       */
       this.loopActive = true;
-      const releaseTailMs = 240;
-      this.loopTimerHandle = setTimeout(() => {
-        if (!this.loopActive) return;
-        // Re-run on the same AudioContext (no recursion through
-        // playMidiSteps, so we avoid the +50 ms anchor accumulating
-        // into audible gaps on every cycle).
-        runCycle();
-        // Reschedule the next re-trigger. We chain setTimeouts of the
-        // same duration so drift is bounded by ~1 ms per cycle.
-        this.loopTimerHandle = setTimeout(
-          () => {
-            if (!this.loopActive) return;
-            runCycle();
-          },
-          totalMs + releaseTailMs,
-        );
-      }, totalMs);
+      const rearm = () => {
+        this.loopTimerHandle = setTimeout(() => {
+          if (!this.loopActive) return;
+          runCycle();
+          rearm();
+        }, cycleMs);
+      };
+      rearm();
     } else if (options?.onEnd) {
       // One-shot: fire onEnd after the last note's duration elapses,
       // including the audio engine's release tail (~240ms).
       const releaseTailMs = 240;
-      setTimeout(() => options.onEnd?.(), totalMs + releaseTailMs);
+      setTimeout(() => options.onEnd?.(), cycleMs + releaseTailMs);
     }
   }
 
