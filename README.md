@@ -140,6 +140,7 @@ A fixed 16-step loop grid.
   [waveform]="'piano'"
   [baseOctave]="4"
   [octaveCount]="2"
+  (notePreview)="onNote($event)"
 ></lib-piano-sequencer>
 ```
 
@@ -149,10 +150,16 @@ A fixed 16-step loop grid.
 | `baseOctave` | `number` | `4` | lowest octave shown |
 | `octaveCount` | `number` | `2` | octaves rendered |
 
-**Output:** `notePreview: EventEmitter<Pitch>`
+**Output:** `notePreview: EventEmitter<Pitch>` — fires whenever a note is
+auditioned, both when a cell is painted and when a step sounds during playback.
 
 **Public methods:** `gridAsText()`, `loadFromText(text)`, `gridAsSequence()`,
 `togglePlay()`, `clear()`
+
+`gridAsText()` is the lossless one: it records the step of every note.
+`gridAsSequence()` reconstructs positions as `{ restMs }` gaps, which is fine
+for playback but cannot express two notes at the same step in different rows as
+anything other than a chord.
 
 ### `<lib-piano-roll>`
 
@@ -187,6 +194,46 @@ one scheduling timestamp, so a chord never smears.
 
 `PlayOptions`: `{ durationMs?, velocity?, waveform? }`
 
+### Precise timing — `scheduleNoteAt`
+
+```ts
+scheduleNoteAt(
+  input: string | Pitch,
+  targetTime: number,
+  options?: PlayOptions,
+): void
+```
+
+`playNote()` sounds a note **as soon as possible**, which is right for a
+keypress and wrong for anything with a pulse: `setTimeout` drifts by 5–20 ms,
+and that wobble is audible as an unsteady beat.
+
+`scheduleNoteAt()` places a note at an exact moment on the **AudioContext
+clock**, so the audio engine — not your timer — decides when it sounds.
+
+```ts
+const ctx = this.piano.getAudioContext();
+if (ctx) {
+  // Four notes, 150 ms apart, immune to timer jitter.
+  const t0 = ctx.currentTime + 0.05;
+  ['C4', 'E4', 'G4', 'C5'].forEach((n, i) =>
+    this.piano.scheduleNoteAt(n, t0 + i * 0.15, { durationMs: 140 }),
+  );
+}
+```
+
+- `targetTime` is in **seconds on `getAudioContext().currentTime`**, not
+  `Date.now()`. A time in the past plays immediately.
+- It is **synchronous** and does not await the context: by the time a promise
+  resolved, the moment you asked for might have passed. Call `resume()` from a
+  user gesture first.
+- Scheduling the same pitch twice releases the earlier note exactly where the
+  later one starts, so a repeated note does not cut itself short.
+
+The usual shape is a **look-ahead scheduler**: a timer that fires often, looks a
+little way into the future, and hands the engine everything due in that window.
+`<lib-piano-sequencer>` runs one at 25 ms with a 100 ms horizon.
+
 ### Sequences
 
 ```ts
@@ -209,6 +256,10 @@ for staccato. `humanize` (0.08) and `velocityHumanize` (0.12) add human jitter
 to timing and dynamics. Both are applied to the **audio clock**, not to
 `setTimeout`, so they never accumulate drift.
 
+Note that `SequenceStep[]` has no notion of position — order and duration only.
+For patterns where the exact placement matters, prefer the MIDI:step format
+below.
+
 ### Patterns
 
 ```ts
@@ -230,7 +281,11 @@ stopEverything()       // all of the above; use this in ngOnDestroy
 setVolume(0..1)        getVolume()      setWaveform(voice)
 resume()               // call from a user gesture
 parsePitch('C4')       frequencyOf(pitch)      getAudioContext()
+voiceRecipe(voice)     // the harmonics behind a composite voice, or null
 ```
+
+`voiceRecipe()` is there so a UI can *draw* a voice without describing it a
+second time — the piano page's waveform preview reads it.
 
 ### Voices
 
@@ -430,5 +485,14 @@ tests, builds, publishes and attaches the tarball to a GitHub Release. It needs
   destroyed before it could be parsed — in every syntax, for every caller.
   `gentle`, `bounce` and `flow` were all affected.
 - **`loop: true` actually loops.** It previously ran three cycles and stopped.
+- **`scheduleNoteAt()`** — place a note at an exact moment on the audio clock.
+  The sequencer's look-ahead used to compute a target and then discard it, so
+  its pulse carried `setTimeout` jitter; now it does not.
+- **`voiceRecipe()`** — read the harmonics behind a composite voice instead of
+  copying them. The piano page's waveform preview had drifted from the synth.
+- **`<lib-piano-sequencer>` keeps its contract.** `notePreview` now actually
+  emits; `baseOctave` and `octaveCount` work after init; "play" no longer
+  flattens the rests out of the pattern; stopping no longer lets a queued note
+  through.
 - `stopEverything()` added.
 - Dropped `@angular/animations` (deprecated upstream) and `zone.js`.
