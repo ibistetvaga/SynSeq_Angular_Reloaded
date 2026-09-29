@@ -59,34 +59,54 @@ describe('PianoSoundService', () => {
 
   describe('playMidiSteps loop', () => {
     let svc: PianoSoundService;
-    let cycles: number;
+    let oscillatorCount: number;
 
     beforeEach(() => {
       vi.useFakeTimers();
       svc = new PianoSoundService();
-      cycles = 0;
+      oscillatorCount = 0;
 
       /*
-       * There is no AudioContext in the test environment, and we do not need
-       * one: the question is how many times the scheduler RE-ARMS, which is
-       * pure timer logic. `ensureRunning` is stubbed to hand back a minimal
-       * fake whose clock never advances, so no event is ever inside the
-       * look-ahead window and `tick()` settles immediately — leaving the loop
-       * timer as the only thing driving the test.
+       * There is no AudioContext in the test environment, so this stands in
+       * for one. It has to implement EVERYTHING the engine touches:
+       * `playMidiSteps` defers node creation into a setTimeout, so as soon as
+       * fake timers advance past the first event the service really does call
+       * `createOscillator`. An earlier version of this fake omitted it and the
+       * spec threw the moment it was finally executed.
+       *
+       * The clock never advances, which keeps the look-ahead window closed
+       * after the first pass and leaves the loop timer as the only thing
+       * driving the test.
        */
+      const param = () => ({
+        value: 1,
+        setValueAtTime: () => {},
+        exponentialRampToValueAtTime: () => {},
+        cancelScheduledValues: () => {},
+        cancelAndHoldAtTime: () => {},
+      });
+
       const fakeCtx = {
         currentTime: 0,
         state: 'running',
-        createGain: () => ({
-          gain: {
-            value: 1,
-            setValueAtTime: () => {},
-            exponentialRampToValueAtTime: () => {},
-            cancelScheduledValues: () => {},
-          },
-          connect: () => {},
-        }),
         destination: {},
+        createGain: () => ({
+          gain: param(),
+          connect: () => {},
+          disconnect: () => {},
+        }),
+        createOscillator: () => {
+          oscillatorCount += 1;
+          return {
+            type: 'sine',
+            frequency: param(),
+            detune: param(),
+            connect: () => {},
+            start: () => {},
+            stop: () => {},
+          };
+        },
+        resume: () => Promise.resolve(),
       };
 
       (svc as any).ensureRunning = () => {
@@ -94,9 +114,6 @@ describe('PianoSoundService', () => {
         (svc as any).masterGain = fakeCtx.createGain();
         return Promise.resolve(fakeCtx);
       };
-
-      const originalStop = svc.stopSequence.bind(svc);
-      svc.stopSequence = () => originalStop();
     });
 
     afterEach(() => {
@@ -113,14 +130,12 @@ describe('PianoSoundService', () => {
       await svc.playMidiSteps(text, { loop: true, stepMs });
 
       const seen = new Set<unknown>();
-      const tickMs = stepMs;
-      for (let elapsed = 0; elapsed < forMs; elapsed += tickMs) {
-        await vi.advanceTimersByTimeAsync(tickMs);
+      for (let elapsed = 0; elapsed < forMs; elapsed += stepMs) {
+        await vi.advanceTimersByTimeAsync(stepMs);
         const handle = (svc as any).loopTimerHandle;
         if (handle) seen.add(handle);
       }
-      cycles = seen.size;
-      return cycles;
+      return seen.size;
     };
 
     it('keeps re-arming well past the three cycles it used to stop at', async () => {
@@ -147,6 +162,23 @@ describe('PianoSoundService', () => {
       await vi.advanceTimersByTimeAsync(2000);
 
       expect((svc as any).loopTimerHandle).toBeNull();
+    });
+
+    /*
+     * Node creation is deferred until an event is nearly due, so at any moment
+     * a stop can arrive with notes queued but not yet built. Those timers used
+     * to be untracked, and fired anyway.
+     */
+    it('builds no further notes after stopSequence', async () => {
+      await svc.playMidiSteps('0@60:1 1@62:1 2@64:1', { stepMs: 100 });
+
+      svc.stopSequence();
+      const builtAtStop = oscillatorCount;
+
+      await vi.advanceTimersByTimeAsync(2000);
+
+      expect(oscillatorCount).toBe(builtAtStop);
+      expect((svc as any).pendingEventTimers).toHaveLength(0);
     });
   });
 });
